@@ -283,8 +283,22 @@ export default function VideoPlayer({
           onDoubleTapLeft={skipBackward}
           onDoubleTapRight={skipForward}
           onTripleTapCenter={() => onNextVideo && onNextVideo()}
-          onTripleTapLeft={() => onOpenComments && onOpenComments()}
-          onTripleTapRight={() => onGoHome && onGoHome()}
+          onTripleTapLeft={() => {
+            if (document.fullscreenElement) {
+              document.exitFullscreen().then(() => {
+                setIsFullscreen(false);
+                setTimeout(() => onOpenComments && onOpenComments(), 100);
+              }).catch(err => console.log(err));
+            } else {
+              onOpenComments && onOpenComments();
+            }
+          }}
+          onTripleTapRight={() => {
+            window.close();
+            setTimeout(() => {
+              if (onGoHome) onGoHome();
+            }, 300);
+          }}
         />
       )}
       {/* Video Element */}

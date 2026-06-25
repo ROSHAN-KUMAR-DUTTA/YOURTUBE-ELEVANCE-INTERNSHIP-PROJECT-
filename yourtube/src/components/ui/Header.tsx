@@ -46,6 +46,7 @@ const Header = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [isdialogeopen, setisdialogeopen] = useState(false);
   const [isLoginDialogOpen, setIsLoginDialogOpen] = useState(false);
+  const [authMode, setAuthMode] = useState<"signin" | "signup">("signin");
   const router = useRouter();
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -159,18 +160,21 @@ const Header = () => {
         ) : (
           <>
             <Button
-              className="flex items-center gap-2"
               variant="outline"
-              onClick={() => setIsLoginDialogOpen(true)}
+              onClick={() => {
+                setAuthMode("signin");
+                setIsLoginDialogOpen(true);
+              }}
             >
-              Sign In (Email)
+              Sign In
             </Button>
             <Button
-              className="flex items-center gap-2"
-              onClick={handlegooglesignin}
+              onClick={() => {
+                setAuthMode("signup");
+                setIsLoginDialogOpen(true);
+              }}
             >
-              <User className="w-4 h-4" />
-              Sign in with Google
+              Sign Up
             </Button>
           </>
         )}{" "}
@@ -183,6 +187,7 @@ const Header = () => {
       <LoginDialog 
         isopen={isLoginDialogOpen} 
         onclose={() => setIsLoginDialogOpen(false)} 
+        initialMode={authMode}
       />
     </header>
   );

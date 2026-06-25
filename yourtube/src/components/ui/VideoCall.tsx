@@ -22,9 +22,9 @@ export default function VideoCall() {
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
   
-  const [isMicOn, setIsMicOn] = useState(true);
-  const [isVideoOn, setIsVideoOn] = useState(true);
-  const [isRemoteVideoOn, setIsRemoteVideoOn] = useState(true);
+  const [isMicOn, setIsMicOn] = useState(false);
+  const [isVideoOn, setIsVideoOn] = useState(false);
+  const [isRemoteVideoOn, setIsRemoteVideoOn] = useState(false);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
@@ -141,12 +141,32 @@ export default function VideoCall() {
 
   const setupMediaAndPeerConnection = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-      setLocalStream(stream);
+      // 1. Get Audio ONLY
+      const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const audioTrack = audioStream.getAudioTracks()[0];
+      audioTrack.enabled = false; // Muted by default
 
+      // 2. Create Dummy Video Track
+      const canvas = document.createElement("canvas");
+      canvas.width = 1;
+      canvas.height = 1;
+      const ctx = canvas.getContext("2d");
+      if (ctx) {
+        ctx.fillStyle = "black";
+        ctx.fillRect(0, 0, 1, 1);
+      }
+      const dummyStream = canvas.captureStream(1);
+      const dummyVideoTrack = dummyStream.getVideoTracks()[0];
+
+      // 3. Initialize RTCPeerConnection
       pcRef.current = new RTCPeerConnection(stunServers);
 
-      stream.getTracks().forEach((track) => pcRef.current!.addTrack(track, stream));
+      // Add tracks to peer connection
+      const combinedStream = new MediaStream([audioTrack, dummyVideoTrack]);
+      combinedStream.getTracks().forEach((track) => pcRef.current!.addTrack(track, combinedStream));
+
+      // 4. Set local stream (only audio initially)
+      setLocalStream(new MediaStream([audioTrack]));
 
       pcRef.current.ontrack = (event) => {
         setRemoteStream(event.streams[0]);
@@ -162,7 +182,7 @@ export default function VideoCall() {
       };
     } catch (error) {
       console.error("Error accessing media devices.", error);
-      alert("Could not access camera/microphone.");
+      alert("Could not access microphone.");
     }
   };
 
@@ -214,8 +234,8 @@ export default function VideoCall() {
     setIsScreenSharing(false);
     setIsRecording(false);
     setIsExpanded(false);
-    setIsVideoOn(true);
-    setIsRemoteVideoOn(true);
+    setIsVideoOn(false);
+    setIsRemoteVideoOn(false);
     setCallState("idle");
     setActiveCall(null);
     setRemoteSocketId(null);
@@ -225,8 +245,12 @@ export default function VideoCall() {
 
   const toggleMic = () => {
     if (localStream) {
-      localStream.getAudioTracks()[0].enabled = !isMicOn;
-      setIsMicOn(!isMicOn);
+      const newMicState = !isMicOn;
+      // Standard WebRTC mute: disable tracks so they send silence
+      localStream.getAudioTracks().forEach((track) => {
+        track.enabled = newMicState;
+      });
+      setIsMicOn(newMicState);
     }
   };
 
@@ -288,7 +312,14 @@ export default function VideoCall() {
         };
 
         // Update local video to show screen
-        if (localVideoRef.current) localVideoRef.current.srcObject = screenStream;
+        if (localVideoRef.current) {
+          // Keep local audio track if it exists so recording still captures it
+          const tracks = [screenTrack];
+          if (localStream) {
+            tracks.push(...localStream.getAudioTracks());
+          }
+          localVideoRef.current.srcObject = new MediaStream(tracks);
+        }
         setIsScreenSharing(true);
       } catch (err) {
         console.error("Error sharing screen", err);
@@ -300,10 +331,10 @@ export default function VideoCall() {
 
   const stopScreenShare = () => {
     if (localStream) {
-      const videoTrack = localStream.getVideoTracks()[0];
+      const videoTrack = localStream.getVideoTracks()[0] || null;
       const sender = pcRef.current?.getSenders().find((s) => s.track?.kind === "video" || s.track === null);
-      if (sender && videoTrack) {
-        sender.replaceTrack(videoTrack);
+      if (sender) {
+        sender.replaceTrack(videoTrack).catch(err => console.error("Error replacing track", err));
       }
       if (localVideoRef.current) localVideoRef.current.srcObject = localStream;
     }

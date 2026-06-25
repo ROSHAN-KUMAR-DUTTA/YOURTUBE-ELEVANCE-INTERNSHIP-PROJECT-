@@ -112,7 +112,7 @@ export const verifyPayment = async (req, res) => {
       await invoice.save();
     }
 
-    return res.status(200).json({ message: "Payment verified and plan updated successfully", isPremium: true });
+    return res.status(200).json({ message: "Payment verified and plan updated successfully", isPremium: true, user });
   } catch (error) {
     console.error("Verify Payment Error:", error);
     res.status(500).json({ message: "Server Error during verification" });

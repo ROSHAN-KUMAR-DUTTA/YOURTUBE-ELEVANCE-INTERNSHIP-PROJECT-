@@ -90,6 +90,9 @@ const PricingPage = () => {
               planName
           });
           if (verifyRes.data.isPremium) {
+              if (verifyRes.data.user) {
+                  localStorage.setItem("user", JSON.stringify(verifyRes.data.user));
+              }
               alert(`Successfully upgraded to ${planName} (Mock Mode)! Check your email for the invoice.`);
               window.location.reload();
           }
@@ -114,6 +117,9 @@ const PricingPage = () => {
             });
             
             if (verifyRes.data.isPremium) {
+              if (verifyRes.data.user) {
+                localStorage.setItem("user", JSON.stringify(verifyRes.data.user));
+              }
               alert(`Successfully upgraded to ${planName}! Check your email for the invoice.`);
               window.location.href = "/";
             }

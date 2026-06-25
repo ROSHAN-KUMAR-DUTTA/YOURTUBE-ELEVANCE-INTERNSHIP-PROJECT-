@@ -94,6 +94,14 @@ export const UserProvider = ({ children }) => {
       const parsedUser = JSON.parse(storedUser);
       setUser(parsedUser);
       fetchAndApplyTheme(parsedUser._id);
+      
+      // Fetch latest user data dynamically to avoid stale state (e.g. current plan updates)
+      axiosInstance.get(`/user/${parsedUser._id}`).then(res => {
+        if (res.data) {
+          setUser(res.data);
+          localStorage.setItem("user", JSON.stringify(res.data));
+        }
+      }).catch(err => console.error("Failed to refresh user profile:", err));
     }
 
     return () => unsubcribe();

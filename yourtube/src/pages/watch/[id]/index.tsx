@@ -54,6 +54,7 @@ const WatchVideo = () => {
           {/* LEFT SIDE */}
           <div className="lg:col-span-2 space-y-4">
             <Videopplayer 
+              key={videos._id}
               video={videos} 
               onNextVideo={() => {
                 const nextVid = videoList.find((v: any) => v._id !== id);

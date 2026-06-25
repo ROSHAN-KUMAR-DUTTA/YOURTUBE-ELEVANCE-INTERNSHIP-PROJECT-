@@ -14,8 +14,8 @@ export const getTheme = async (req, res) => {
     const istTime = new Date(now.getTime() + istOffset);
     const hours = istTime.getUTCHours(); 
 
-    // Between 10:00 AM and 12:00 PM (10 and 11)
-    const isTimeMatch = hours >= 10 && hours < 12;
+    // Between 7:00 PM and 12:00 AM (19 to 23)
+    const isTimeMatch = hours >= 19 && hours <= 23;
     const normalizedUserState = user.state ? user.state.trim().toLowerCase() : "";
     const isStateMatch = southStates.map(s => s.toLowerCase()).includes(normalizedUserState);
 
