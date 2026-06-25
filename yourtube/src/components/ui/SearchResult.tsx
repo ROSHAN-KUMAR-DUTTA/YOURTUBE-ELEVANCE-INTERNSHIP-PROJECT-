@@ -2,6 +2,8 @@ import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { formatDistanceToNow } from "date-fns";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+const BACKEND_URL = process.env.BACKEND_URL || "";
+
 const SearchResult = ({ query }: any) => {
   if (!query.trim()) {
     return (
@@ -72,7 +74,7 @@ const SearchResult = ({ query }: any) => {
               <Link href={`/watch/${video._id}`} className="flex-shrink-0">
                 <div className="relative w-80 aspect-video bg-muted rounded-lg overflow-hidden">
                   <video
-                    src={`http://localhost:5000/${video.filepath}`}
+                    src={`${BACKEND_URL}/${video.filepath}`}
                     className="object-cover group-hover:scale-105 transition-transform duration-200"
                   />
                   <div className="absolute bottom-2 right-2 bg-black/80 text-white text-xs px-1 rounded">

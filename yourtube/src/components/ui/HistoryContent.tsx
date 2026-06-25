@@ -15,6 +15,8 @@ import {
 import axiosInstance from "@/lib/axiosinstance";
 import { useUser } from "@/lib/AuthContext";
 
+const BACKEND_URL = process.env.BACKEND_URL || "";
+
 export default function HistoryContent() {
   const [history, setHistory] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -102,7 +104,7 @@ export default function HistoryContent() {
             <Link href={`/watch/${item.videoid._id}`} className="flex-shrink-0">
               <div className="relative w-32 sm:w-40 md:w-48 aspect-video bg-muted rounded overflow-hidden">
                 <video
-                  src={`${"http://localhost:5000"}/${item.videoid?.filepath}`}
+                  src={`${BACKEND_URL}/${item.videoid?.filepath}`}
                   className="object-cover w-full h-full group-hover:scale-105 transition-transform duration-200"
                 />
               </div>

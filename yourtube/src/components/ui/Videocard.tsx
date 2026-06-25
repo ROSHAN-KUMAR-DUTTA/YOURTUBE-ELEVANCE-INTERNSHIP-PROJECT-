@@ -4,6 +4,8 @@ import { formatDistanceToNow } from "date-fns";
 import { Avatar, AvatarFallback } from "./avatar";
 import { useState } from "react";
 
+const BACKEND_URL = process.env.BACKEND_URL || "";
+
 export default function VideoCard({ video }: any) {
   const [duration, setDuration] = useState<number | null>(null);
 
@@ -22,7 +24,7 @@ export default function VideoCard({ video }: any) {
       <div className="space-y-3">
         <div className="relative aspect-video rounded-lg overflow-hidden bg-muted">
           <video
-            src={`${"http://localhost:5000"}/${video?.filepath}`}
+            src={`${BACKEND_URL}/${video?.filepath}`}
             className="object-cover group-hover:scale-105 transition-transform duration-200"
             onLoadedMetadata={handleLoadedMetadata}
           />
