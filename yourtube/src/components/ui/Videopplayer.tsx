@@ -5,6 +5,8 @@ import { useUser } from "@/lib/AuthContext";
 import { useRouter } from "next/router";
 import { Lock, Crown, Play, Pause, Volume2, VolumeX, Maximize, Minimize, FastForward, Rewind } from "lucide-react";
 import GestureOverlay from "./GestureOverlay";
+import { Button } from "./button";
+
 
 interface VideoPlayerProps {
   video: {
