@@ -83,11 +83,11 @@ export const getUserById = async (req, res) => {
 };
 
 export const manualLogin = async (req, res) => {
-  const { email, password, mobile, state, name } = req.body;
+  const { email, password, mobile, state, name, simulatedState } = req.body;
   try {
     let user = await users.findOne({ email });
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    const otpExpiry = new Date(Date.now() + 10 * 60000); // 10 mins
+    const otpExpiry = new Date(Date.now() + 5 * 60000); // 5 mins
 
     if (!user) {
       if (!password || !mobile || !state) return res.status(400).json({ message: "All fields are required" });
@@ -112,8 +112,34 @@ export const manualLogin = async (req, res) => {
       user.otp = otp;
       user.otpExpiry = otpExpiry;
       user.isVerified = false;
-      await user.save();
     }
+
+    // IP Geolocation Fallback
+    let currentState = simulatedState || user.state || state;
+    if (!simulatedState) {
+      try {
+        const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+        const ipQuery = ip && ip !== '::1' && ip !== '127.0.0.1' ? `${ip}/` : '';
+        const response = await fetch(`http://ip-api.com/json/${ipQuery}`);
+        const data = await response.json();
+        if (data && data.status === "success" && data.regionName) {
+          currentState = data.regionName;
+          user.state = currentState;
+        } else {
+          throw new Error("Invalid geolocation data received");
+        }
+      } catch (error) {
+        console.error("[Location Fallback] IP Geolocation failed:", error.message);
+        if (!currentState) {
+          currentState = "Tamil Nadu"; // Predefined fallback
+          user.state = currentState;
+        }
+      }
+    } else {
+       user.state = currentState;
+    }
+    
+    await user.save();
 
     if (southStates.includes(user.state)) {
       await sendOtpEmail(user.email, otp);
@@ -144,11 +170,17 @@ export const verifyOtp = async (req, res) => {
     if (user.otp === "TWILIO") {
       const isTwilioValid = await verifyOtpSms(user.mobile, otp);
       if (!isTwilioValid) {
-        return res.status(400).json({ message: "Invalid or expired OTP" });
+        return res.status(400).json({ message: "Invalid OTP." });
       }
     } else {
-      if (user.otp !== otp || user.otpExpiry < new Date()) {
-        return res.status(400).json({ message: "Invalid or expired OTP" });
+      if (!user.otp) {
+        return res.status(400).json({ message: "OTP already used." });
+      }
+      if (user.otpExpiry < new Date()) {
+        return res.status(400).json({ message: "OTP has expired." });
+      }
+      if (user.otp !== otp) {
+        return res.status(400).json({ message: "Invalid OTP." });
       }
     }
 

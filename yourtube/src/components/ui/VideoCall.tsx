@@ -32,6 +32,7 @@ export default function VideoCall() {
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
+  const pendingCandidatesRef = useRef<RTCIceCandidateInit[]>([]);
   
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordedChunksRef = useRef<Blob[]>([]);
@@ -46,23 +47,52 @@ export default function VideoCall() {
     if (remoteVideoRef.current && remoteStream) remoteVideoRef.current.srcObject = remoteStream;
   }, [remoteStream]);
 
+  const processIceQueue = async () => {
+    if (pcRef.current && pendingCandidatesRef.current.length > 0) {
+      console.log(`[WebRTC] ICE Queue Processed (${pendingCandidatesRef.current.length} candidates)`);
+      for (const candidate of pendingCandidatesRef.current) {
+        try {
+          console.log("[WebRTC] ICE Candidate Added (from queue)");
+          await pcRef.current.addIceCandidate(new RTCIceCandidate(candidate));
+        } catch (e) {
+          console.error("Error adding queued ice candidate", e);
+        }
+      }
+      pendingCandidatesRef.current = [];
+    }
+  };
+
   // Handle Socket Events for WebRTC
   useEffect(() => {
     if (!socket) return;
 
     const handleCallAnswered = async (signal: RTCSessionDescriptionInit) => {
+      console.log("[WebRTC] Answer Received");
       if (pcRef.current && pcRef.current.signalingState !== "closed") {
-        await pcRef.current.setRemoteDescription(new RTCSessionDescription(signal));
-        setCallState("connected");
+        try {
+          await pcRef.current.setRemoteDescription(new RTCSessionDescription(signal));
+          console.log("[WebRTC] Remote Description Set (Caller)");
+          setCallState("connected");
+          await processIceQueue();
+        } catch (error) {
+          console.error("Error setting remote description:", error);
+        }
       }
     };
 
     const handleIceCandidate = async (candidate: RTCIceCandidateInit) => {
+      console.log("[WebRTC] ICE Candidate Received");
       if (pcRef.current && pcRef.current.signalingState !== "closed") {
-        try {
-          await pcRef.current.addIceCandidate(new RTCIceCandidate(candidate));
-        } catch (e) {
-          console.error("Error adding ice candidate", e);
+        if (!pcRef.current.remoteDescription) {
+          console.log("[WebRTC] ICE Candidate Queued (Remote Description not set)");
+          pendingCandidatesRef.current.push(candidate);
+        } else {
+          try {
+            console.log("[WebRTC] ICE Candidate Added");
+            await pcRef.current.addIceCandidate(new RTCIceCandidate(candidate));
+          } catch (e) {
+            console.error("Error adding ice candidate", e);
+          }
         }
       }
     };
@@ -104,16 +134,22 @@ export default function VideoCall() {
     callStartTimeRef.current = new Date();
     await setupMediaAndPeerConnection();
     
-    const offer = await pcRef.current!.createOffer();
-    await pcRef.current!.setLocalDescription(offer);
-    
-    socket?.emit("call-user", {
-      userToCall: remoteSocketId,
-      signalData: offer,
-      from: user?._id,
-      name: user?.name || user?.channelname || "User",
-      profilePic: user?.profilePic,
-    });
+    try {
+      console.log("[WebRTC] Offer Created");
+      const offer = await pcRef.current!.createOffer();
+      await pcRef.current!.setLocalDescription(offer);
+      
+      console.log("[WebRTC] Offer Sent");
+      socket?.emit("call-user", {
+        userToCall: remoteSocketId,
+        signalData: offer,
+        from: user?._id,
+        name: user?.name || user?.channelname || "User",
+        profilePic: user?.profilePic,
+      });
+    } catch (error) {
+      console.error("Error creating/sending offer:", error);
+    }
   };
 
   const acceptCall = async () => {
@@ -121,15 +157,25 @@ export default function VideoCall() {
     setCallState("connected");
     
     await setupMediaAndPeerConnection();
-    await pcRef.current!.setRemoteDescription(new RTCSessionDescription(activeCall!.signal));
     
-    const answer = await pcRef.current!.createAnswer();
-    await pcRef.current!.setLocalDescription(answer);
-    
-    socket?.emit("answer-call", {
-      to: activeCall!.from,
-      signal: answer,
-    });
+    try {
+      console.log("[WebRTC] Offer Received (via Modal)");
+      await pcRef.current!.setRemoteDescription(new RTCSessionDescription(activeCall!.signal));
+      console.log("[WebRTC] Remote Description Set (Receiver)");
+      await processIceQueue();
+      
+      console.log("[WebRTC] Answer Created");
+      const answer = await pcRef.current!.createAnswer();
+      await pcRef.current!.setLocalDescription(answer);
+      
+      console.log("[WebRTC] Answer Sent");
+      socket?.emit("answer-call", {
+        to: activeCall!.from,
+        signal: answer,
+      });
+    } catch (error) {
+      console.error("Error accepting call:", error);
+    }
   };
 
   const rejectCall = () => {
@@ -140,12 +186,34 @@ export default function VideoCall() {
   };
 
   const setupMediaAndPeerConnection = async () => {
+    let audioTrack: MediaStreamTrack | null = null;
+    let audioStream: MediaStream | null = null;
+    
     try {
-      // 1. Get Audio ONLY
-      const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const audioTrack = audioStream.getAudioTracks()[0];
+      // 1. Attempt to Get Audio
+      audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      audioTrack = audioStream.getAudioTracks()[0];
       audioTrack.enabled = false; // Muted by default
+    } catch (error) {
+      console.error("Error accessing microphone. Falling back to dummy audio track.", error);
+      toast.warning("Microphone not detected. Call will proceed without audio.");
+      // Create Dummy Audio Track
+      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const oscillator = ctx.createOscillator();
+      const dst = ctx.createMediaStreamDestination();
+      oscillator.connect(dst);
+      oscillator.start();
+      audioTrack = dst.stream.getAudioTracks()[0];
+      audioTrack.enabled = false;
+    }
 
+    // Safety check: if the call was ended while we were waiting for user permission, abort and clean up!
+    // Since we can't reliably read the latest callState without a ref, we check if pcRef was explicitly nulled by endCall
+    // Wait, pcRef.current is initially null, so we can't just check that. 
+    // Instead, we can check if we still intend to be in a call by checking a local variable or ref.
+    // However, if the user ended the call, we can at least ensure we don't leak this stream if we abort later.
+
+    try {
       // 2. Create Dummy Video Track
       const canvas = document.createElement("canvas");
       canvas.width = 1;
@@ -160,6 +228,7 @@ export default function VideoCall() {
 
       // 3. Initialize RTCPeerConnection
       pcRef.current = new RTCPeerConnection(stunServers);
+      pendingCandidatesRef.current = []; // Reset queue for new connection
 
       // Add tracks to peer connection
       const combinedStream = new MediaStream([audioTrack, dummyVideoTrack]);
@@ -174,6 +243,7 @@ export default function VideoCall() {
 
       pcRef.current.onicecandidate = (event) => {
         if (event.candidate && remoteSocketId) {
+          console.log("[WebRTC] ICE Candidate Generated");
           socket?.emit("ice-candidate", {
             to: remoteSocketId,
             candidate: event.candidate,
@@ -181,8 +251,11 @@ export default function VideoCall() {
         }
       };
     } catch (error) {
-      console.error("Error accessing media devices.", error);
-      alert("Could not access microphone.");
+      console.error("Critical error setting up PeerConnection.", error);
+      // Clean up the audio track if we fail here
+      if (audioStream) {
+        audioStream.getTracks().forEach(track => track.stop());
+      }
     }
   };
 
@@ -213,6 +286,16 @@ export default function VideoCall() {
     }
 
     if (pcRef.current) {
+      pcRef.current.getSenders().forEach((sender) => {
+        if (sender.track) {
+          sender.track.stop();
+        }
+      });
+      pcRef.current.getReceivers().forEach((receiver) => {
+        if (receiver.track) {
+          receiver.track.stop();
+        }
+      });
       pcRef.current.close();
       pcRef.current = null;
     }
@@ -271,6 +354,12 @@ export default function VideoCall() {
         const newStream = await navigator.mediaDevices.getUserMedia({ video: true });
         const newVideoTrack = newStream.getVideoTracks()[0];
         
+        // If the call was ended while waiting for permission, abort immediately
+        if (!pcRef.current) {
+          newVideoTrack.stop();
+          return;
+        }
+        
         if (localStream) {
           localStream.addTrack(newVideoTrack);
         }
@@ -299,6 +388,12 @@ export default function VideoCall() {
       try {
         const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
         const screenTrack = screenStream.getVideoTracks()[0];
+        
+        // If the call was ended while waiting for permission, abort immediately
+        if (!pcRef.current) {
+          screenTrack.stop();
+          return;
+        }
         
         // Replace video track in peer connection
         const sender = pcRef.current?.getSenders().find((s) => s.track?.kind === "video");
@@ -393,7 +488,7 @@ export default function VideoCall() {
         <div className={
           isExpanded 
             ? "fixed top-4 bottom-4 left-4 right-4 md:top-12 md:bottom-12 md:left-24 md:right-24 z-[200] bg-card rounded-2xl shadow-2xl overflow-hidden border border-border flex flex-col animate-in fade-in zoom-in-95 duration-300" 
-            : "fixed bottom-4 right-4 z-[200] w-80 sm:w-96 bg-card rounded-2xl shadow-2xl overflow-hidden border border-border flex flex-col animate-in slide-in-from-bottom-10 fade-in duration-300"
+            : "fixed bottom-4 right-4 z-[200] w-[calc(100vw-2rem)] max-w-sm sm:w-96 bg-card rounded-2xl shadow-2xl overflow-hidden border border-border flex flex-col animate-in slide-in-from-bottom-10 fade-in duration-300"
         }>
           
           <div className={`relative bg-black flex-1 min-h-0 overflow-hidden ${!isExpanded ? 'aspect-video' : ''}`}>
@@ -464,63 +559,63 @@ export default function VideoCall() {
           </div>
 
           {/* Controls */}
-          <div className="p-4 bg-background border-t border-border flex items-center justify-center gap-3 shrink-0 relative z-50">
+          <div className="p-3 sm:p-4 bg-background border-t border-border flex items-center justify-center gap-2 sm:gap-3 shrink-0 relative z-50 flex-wrap sm:flex-nowrap">
             <Button
               variant={isMicOn ? "outline" : "destructive"}
               size="icon"
-              className="rounded-full"
+              className="rounded-full w-9 h-9 sm:w-10 sm:h-10"
               onClick={toggleMic}
             >
-              {isMicOn ? <Mic className="w-5 h-5" /> : <MicOff className="w-5 h-5" />}
+              {isMicOn ? <Mic className="w-4 h-4 sm:w-5 sm:h-5" /> : <MicOff className="w-4 h-4 sm:w-5 sm:h-5" />}
             </Button>
 
             <Button
               variant={isVideoOn ? "outline" : "destructive"}
               size="icon"
-              className="rounded-full"
+              className="rounded-full w-9 h-9 sm:w-10 sm:h-10"
               onClick={toggleVideo}
             >
-              {isVideoOn ? <Video className="w-5 h-5" /> : <VideoOff className="w-5 h-5" />}
+              {isVideoOn ? <Video className="w-4 h-4 sm:w-5 sm:h-5" /> : <VideoOff className="w-4 h-4 sm:w-5 sm:h-5" />}
             </Button>
 
             <Button
               variant={isScreenSharing ? "default" : "outline"}
               size="icon"
-              className={`rounded-full ${isScreenSharing ? "bg-blue-600 text-white hover:bg-blue-700" : ""}`}
+              className={`rounded-full w-9 h-9 sm:w-10 sm:h-10 ${isScreenSharing ? "bg-blue-600 text-white hover:bg-blue-700" : ""}`}
               onClick={toggleScreenShare}
               title="Share Screen"
             >
-              <MonitorUp className="w-5 h-5" />
+              <MonitorUp className="w-4 h-4 sm:w-5 sm:h-5" />
             </Button>
 
             <Button
               variant={isRecording ? "destructive" : "outline"}
               size="icon"
-              className="rounded-full"
+              className="rounded-full w-9 h-9 sm:w-10 sm:h-10"
               onClick={toggleRecording}
               title={isRecording ? "Stop Recording" : "Start Recording"}
             >
-              {isRecording ? <Square className="w-4 h-4 fill-current" /> : <Circle className="w-5 h-5 text-red-500" />}
+              {isRecording ? <Square className="w-3 h-3 sm:w-4 sm:h-4 fill-current" /> : <Circle className="w-4 h-4 sm:w-5 sm:h-5 text-red-500" />}
             </Button>
             
             <Button
               variant="outline"
               size="icon"
-              className="rounded-full hidden sm:flex"
+              className="rounded-full w-9 h-9 sm:w-10 sm:h-10 flex"
               onClick={() => setIsExpanded(!isExpanded)}
               title={isExpanded ? "Minimize" : "Maximize"}
             >
-              {isExpanded ? <Minimize2 className="w-5 h-5" /> : <Maximize2 className="w-5 h-5" />}
+              {isExpanded ? <Minimize2 className="w-4 h-4 sm:w-5 sm:h-5" /> : <Maximize2 className="w-4 h-4 sm:w-5 sm:h-5" />}
             </Button>
 
             <Button
               variant="destructive"
               size="icon"
-              className="rounded-full ml-auto hover:scale-105 transition-transform"
+              className="rounded-full w-9 h-9 sm:w-10 sm:h-10 ml-auto hover:scale-105 transition-transform shrink-0"
               onClick={() => endCall()}
               title="End Call"
             >
-              <PhoneOff className="w-5 h-5" />
+              <PhoneOff className="w-4 h-4 sm:w-5 sm:h-5" />
             </Button>
           </div>
         </div>

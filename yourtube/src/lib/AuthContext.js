@@ -12,9 +12,24 @@ export const UserProvider = ({ children }) => {
 
   const [theme, setTheme] = useState("dark");
 
-  const fetchAndApplyTheme = async (userId) => {
+  // DEMO MODE STATES
+  const [demoMode, setDemoMode] = useState(false);
+  const [demoState, setDemoState] = useState("Auto Detect");
+  const [demoTime, setDemoTime] = useState("Auto Time");
+
+  const fetchAndApplyTheme = async (userId, customTime = demoTime, isDemo = demoMode, customState = demoState) => {
     try {
-      const res = await axiosInstance.get(`/api/theme/${userId}`);
+      let url = `/api/theme/${userId}?`;
+      if (isDemo) {
+        if (customTime !== "Auto Time") {
+          const hourMatch = customTime.match(/^(\d{2})/);
+          if (hourMatch) url += `simulatedHour=${hourMatch[1]}&`;
+        }
+        if (customState !== "Auto Detect") {
+          url += `simulatedState=${encodeURIComponent(customState)}&`;
+        }
+      }
+      const res = await axiosInstance.get(url);
       const fetchedTheme = res.data.theme || "dark";
       setTheme(fetchedTheme);
       if (fetchedTheme === "light") {
@@ -62,6 +77,9 @@ export const UserProvider = ({ children }) => {
   };
 
   const manualLogin = async (payload) => {
+    if (demoMode && demoState !== "Auto Detect") {
+      payload.simulatedState = demoState;
+    }
     const res = await axiosInstance.post("/user/login-manual", payload);
     return res.data;
   };
@@ -108,7 +126,10 @@ export const UserProvider = ({ children }) => {
   }, []);
 
   return (
-    <UserContext.Provider value={{ user, setUser, theme, login, logout, handlegooglesignin, manualLogin, verifyOtp }}>
+    <UserContext.Provider value={{ 
+      user, setUser, theme, login, logout, handlegooglesignin, manualLogin, verifyOtp,
+      demoMode, setDemoMode, demoState, setDemoState, demoTime, setDemoTime, fetchAndApplyTheme 
+    }}>
       {children}
     </UserContext.Provider>
   );

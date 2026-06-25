@@ -60,10 +60,14 @@ io.on("connection", (socket) => {
   });
 
   socket.on("call-user", (data) => {
-    const { userToCall, signalData, from, name } = data;
+    const { userToCall, signalData, from, name, profilePic } = data;
+    console.log(`[Socket] Call initiated from ${from} to ${userToCall}`);
     const receiverSocketId = activeUsers.get(userToCall);
     if (receiverSocketId) {
-      io.to(receiverSocketId).emit("incoming-call", { signal: signalData, from, name });
+      console.log(`[Socket] Receiver found, emitting incoming-call to socket ${receiverSocketId}`);
+      io.to(receiverSocketId).emit("incoming-call", { signal: signalData, from, name, profilePic });
+    } else {
+      console.log(`[Socket] Receiver ${userToCall} not found in activeUsers`);
     }
   });
 

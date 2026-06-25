@@ -167,48 +167,50 @@ const VideoInfo = ({ video }: any) => {
     <div className="space-y-4">
       <h1 className="text-xl font-semibold">{video.videotitle}</h1>
 
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Avatar className="w-10 h-10">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="flex items-center gap-3 md:gap-4 shrink-0">
+          <Avatar className="w-10 h-10 shrink-0">
             <AvatarFallback>{video.videochanel[0]}</AvatarFallback>
           </Avatar>
-          <div>
-            <h3 className="font-medium">{video.videochanel}</h3>
-            <p className="text-sm text-muted-foreground">1.2M subscribers</p>
+          <div className="min-w-0">
+            <h3 className="font-medium truncate">{video.videochanel}</h3>
+            <p className="text-xs sm:text-sm text-muted-foreground truncate">1.2M subscribers</p>
           </div>
           {(!user || user._id !== video.uploader) && (
             <Button 
-              className={`ml-4 ${isSubscribed ? 'bg-gray-200 text-black hover:bg-gray-300 dark:bg-gray-700 dark:text-white dark:hover:bg-gray-600' : 'bg-white text-black hover:bg-gray-200 dark:bg-red-600 dark:text-white dark:hover:bg-red-700'}`}
+              className={`ml-2 sm:ml-4 shrink-0 ${isSubscribed ? 'bg-gray-200 text-black hover:bg-gray-300 dark:bg-gray-700 dark:text-white dark:hover:bg-gray-600' : 'bg-white text-black hover:bg-gray-200 dark:bg-red-600 dark:text-white dark:hover:bg-red-700'}`}
               onClick={handleSubscribe}
             >
               {isSubscribed ? "Subscribed" : "Subscribe"}
             </Button>
           )}
         </div>
-        <div className="flex items-center gap-2">
-          <div className="flex items-center bg-gray-100 text-black dark:bg-[#272727] dark:text-white rounded-full">
+        
+        {/* Action Buttons Container - Scrollable on mobile */}
+        <div className="flex items-center gap-2 overflow-x-auto pb-2 md:pb-0 scrollbar-hide -mx-4 px-4 md:mx-0 md:px-0">
+          <div className="flex items-center bg-gray-100 text-black dark:bg-[#272727] dark:text-white rounded-full shrink-0">
             <Button
               variant="ghost"
               size="sm"
-              className="rounded-l-full"
+              className="rounded-l-full px-4"
               onClick={handleLike}
             >
               <ThumbsUp
-                className={`w-5 h-5 mr-2 ${
+                className={`w-4 h-4 sm:w-5 sm:h-5 mr-2 ${
                   isLiked ? "fill-current" : ""
                 }`}
               />
               {likes.toLocaleString()}
             </Button>
-            <div className="w-px h-6 bg-muted" />
+            <div className="w-px h-5 bg-muted" />
             <Button
               variant="ghost"
               size="sm"
-              className="rounded-r-full"
+              className="rounded-r-full px-4"
               onClick={handleDislike}
             >
               <ThumbsDown
-                className={`w-5 h-5 mr-2 ${
+                className={`w-4 h-4 sm:w-5 sm:h-5 mr-2 ${
                   isDisliked ? "fill-current" : ""
                 }`}
               />
@@ -218,37 +220,37 @@ const VideoInfo = ({ video }: any) => {
           <Button
             variant="ghost"
             size="sm"
-            className={`bg-gray-100 text-black dark:bg-[#272727] dark:text-white rounded-full ${
+            className={`bg-gray-100 text-black dark:bg-[#272727] dark:text-white rounded-full shrink-0 px-4 ${
               isWatchLater ? "text-primary" : ""
             }`}
             onClick={handleWatchLater}
           >
-            <Clock className="w-5 h-5 mr-2" />
+            <Clock className="w-4 h-4 sm:w-5 sm:h-5 mr-2" />
             {isWatchLater ? "Saved" : "Watch Later"}
           </Button>
           <Button
             variant="ghost"
             size="sm"
-            className="bg-gray-100 text-black dark:bg-[#272727] dark:text-white rounded-full"
+            className="bg-gray-100 text-black dark:bg-[#272727] dark:text-white rounded-full shrink-0 px-4"
           >
-            <Share className="w-5 h-5 mr-2" />
+            <Share className="w-4 h-4 sm:w-5 sm:h-5 mr-2" />
             Share
           </Button>
           <Button
             variant="ghost"
             size="sm"
-            className="bg-gray-100 text-black dark:bg-[#272727] dark:text-white rounded-full"
+            className="bg-gray-100 text-black dark:bg-[#272727] dark:text-white rounded-full shrink-0 px-4"
             onClick={handleDownload}
           >
-            <Download className="w-5 h-5 mr-2" />
+            <Download className="w-4 h-4 sm:w-5 sm:h-5 mr-2" />
             Download
           </Button>
           <Button
             variant="ghost"
             size="icon"
-            className="bg-gray-100 text-black dark:bg-[#272727] dark:text-white rounded-full"
+            className="bg-gray-100 text-black dark:bg-[#272727] dark:text-white rounded-full shrink-0 min-w-[36px]"
           >
-            <MoreHorizontal className="w-5 h-5" />
+            <MoreHorizontal className="w-4 h-4 sm:w-5 sm:h-5" />
           </Button>
         </div>
       </div>

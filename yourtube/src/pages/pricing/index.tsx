@@ -161,9 +161,9 @@ const PricingPage = () => {
         {PLANS.map((plan) => (
           <div
             key={plan.name}
-            className={`relative flex flex-col p-8 rounded-2xl border ${plan.color} ${
-              plan.popular ? "scale-105 z-10" : "bg-card text-card-foreground border-border"
-            } transition-transform duration-300 hover:scale-105`}
+            className={`relative flex flex-col p-6 sm:p-8 rounded-2xl border ${plan.color} ${
+              plan.popular ? "lg:scale-105 z-10 border-yellow-400 shadow-xl" : "bg-card text-card-foreground border-border"
+            } transition-transform duration-300 hover:scale-[1.02] lg:hover:scale-105`}
           >
             {plan.popular && (
               <div className="absolute top-0 inset-x-0 transform -translate-y-1/2 flex justify-center">

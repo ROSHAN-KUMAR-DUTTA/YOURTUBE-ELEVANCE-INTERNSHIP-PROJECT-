@@ -38,17 +38,26 @@ export const SocketProvider = ({ children }: { children: React.ReactNode }) => {
   const [callState, setCallState] = useState<"idle" | "calling" | "incoming" | "connected">("idle");
   const [remoteSocketId, setRemoteSocketId] = useState<string | null>(null);
 
+  const callStateRef = useRef(callState);
+  useEffect(() => {
+    callStateRef.current = callState;
+  }, [callState]);
+
   useEffect(() => {
     if (user?._id) {
       const newSocket = io("http://localhost:5000");
       setSocket(newSocket);
+
+      if (newSocket.connected) {
+        newSocket.emit("register", user._id);
+      }
 
       newSocket.on("connect", () => {
         newSocket.emit("register", user._id);
       });
 
       newSocket.on("incoming-call", (data: CallData) => {
-        if (callState === "idle") {
+        if (callStateRef.current === "idle") {
           setActiveCall(data);
           setCallState("incoming");
           setRemoteSocketId(data.from); // the caller's userId
