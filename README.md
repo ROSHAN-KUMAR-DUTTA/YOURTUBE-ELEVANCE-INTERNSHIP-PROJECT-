@@ -191,37 +191,7 @@ CLOUDINARY_API_SECRET=
 
 ---
 
-# 📸 Screenshots
 
-## Home Page
-
-(Add Screenshot)
-
----
-
-## Video Player
-
-(Add Screenshot)
-
----
-
-## Search
-
-(Add Screenshot)
-
----
-
-## Upload Video
-
-(Add Screenshot)
-
----
-
-## Profile
-
-(Add Screenshot)
-
----
 
 # 📈 Future Improvements
 
