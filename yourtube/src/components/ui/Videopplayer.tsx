@@ -312,7 +312,7 @@ export default function VideoPlayer({
         onPlay={() => setIsPlaying(true)}
         onPause={() => setIsPlaying(false)}
       >
-        <source src={`${process.env.BACKEND_URL}/${video?.filepath}`} type="video/mp4" />
+        <source src={`https://yourtube-elevance-internship-project.onrender.com/${video?.filepath}`} type="video/mp4" />
       </video>
 
       {/* Floating Remaining Time Badge */}

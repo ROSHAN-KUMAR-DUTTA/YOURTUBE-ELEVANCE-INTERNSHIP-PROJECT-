@@ -74,7 +74,7 @@ const SearchResult = ({ query }: any) => {
               <Link href={`/watch/${video._id}`} className="flex-shrink-0">
                 <div className="relative w-80 aspect-video bg-muted rounded-lg overflow-hidden">
                   <video
-                    src={`${BACKEND_URL}/${video.filepath}`}
+                    src={`https://yourtube-elevance-internship-project.onrender.com/${video.filepath}`}
                     className="object-cover group-hover:scale-105 transition-transform duration-200"
                   />
                   <div className="absolute bottom-2 right-2 bg-black/80 text-white text-xs px-1 rounded">
