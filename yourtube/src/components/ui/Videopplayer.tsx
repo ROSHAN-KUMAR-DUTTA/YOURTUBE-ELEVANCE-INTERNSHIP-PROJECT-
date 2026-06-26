@@ -119,15 +119,23 @@ export default function VideoPlayer({
   };
 
   // Video Events
-  const togglePlay = () => {
-    if (isLocked || !videoRef.current) return;
-    if (isPlaying) {
-      videoRef.current.pause();
-    } else {
-      videoRef.current.play();
+  const togglePlay = async () => {
+  if (isLocked || !videoRef.current) return;
+  if (isPlaying) {
+    videoRef.current.pause();
+    setIsPlaying(false);
+  } else {
+    try {
+      await videoRef.current.play();
+      setIsPlaying(true);
+    } catch (err: any) {
+      if (err.name !== 'AbortError') {
+        console.error(err);
+      }
+      // AbortError is safe to ignore
     }
-    setIsPlaying(!isPlaying);
-  };
+  }
+};
 
   const skipForward = (e?: React.MouseEvent) => {
     e?.stopPropagation();

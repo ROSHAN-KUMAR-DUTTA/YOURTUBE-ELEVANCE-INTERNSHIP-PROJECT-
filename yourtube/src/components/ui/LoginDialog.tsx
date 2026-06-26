@@ -75,7 +75,7 @@ const LoginDialog = ({ isopen, onclose, initialMode = "signin" }: { isopen: bool
 
   return (
     <Dialog open={isopen} onOpenChange={onclose}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent aria-describedby={undefined} className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>{step === "details" ? (mode === "signin" ? "Sign In" : "Create Account") : "Verify OTP"}</DialogTitle>
         </DialogHeader>
