@@ -517,7 +517,7 @@ export default function VideoCall() {
             {!isRemoteVideoOn && (
               <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-gray-900 backdrop-blur-xl transition-all">
                 <Avatar className="w-32 h-32 md:w-48 md:h-48 border-4 border-gray-700 shadow-2xl mb-4">
-                  <AvatarImage src={`https://yourtube-elevance-internship-project.onrender.com/${activeCall?.profilePic || 'default'}`} />
+                  <AvatarImage src={activeCall?.profilePic || undefined} />
                   <AvatarFallback className="text-4xl bg-blue-100 text-blue-600">
                     {activeCall?.name ? activeCall.name[0].toUpperCase() : <UserIcon className="w-16 h-16" />}
                   </AvatarFallback>
@@ -533,7 +533,7 @@ export default function VideoCall() {
               {!isVideoOn && !isScreenSharing && (
                 <div className="absolute inset-0 z-20 flex items-center justify-center bg-gray-800">
                   <Avatar className="w-12 h-12 border-2 border-gray-600">
-                    <AvatarImage src={`https://yourtube-elevance-internship-project.onrender.com/${user?.profilePic || 'default'}`} />
+                    <AvatarImage src={user?.profilePic || undefined} />
                     <AvatarFallback className="text-xl bg-blue-100 text-blue-600">
                       {user?.channelname ? user.channelname[0].toUpperCase() : <UserIcon />}
                     </AvatarFallback>

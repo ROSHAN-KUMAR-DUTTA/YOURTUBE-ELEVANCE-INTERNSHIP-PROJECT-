@@ -104,8 +104,8 @@ export default function HistoryContent() {
             <Link href={`/watch/${item.videoid._id}`} className="flex-shrink-0">
               <div className="relative w-32 sm:w-40 md:w-48 aspect-video bg-muted rounded overflow-hidden">
                 <video
-                  src={`https://yourtube-elevance-internship-project.onrender.com/${item.videoid?.filepath}`}
-                  className="object-cover w-full h-full group-hover:scale-105 transition-transform duration-200"
+                  src={item.videoid?.filepath}
+                  className="object-cover group-hover:scale-105 transition-transform duration-200"
                 />
               </div>
             </Link>

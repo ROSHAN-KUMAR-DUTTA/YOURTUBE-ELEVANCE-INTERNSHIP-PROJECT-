@@ -57,7 +57,7 @@ export default function FriendsList() {
           {users.map((friend) => (
             <div key={friend._id} className="bg-card text-card-foreground p-6 rounded-2xl border border-border shadow-sm flex items-center gap-4 hover:shadow-md transition-shadow">
               <Avatar className="w-16 h-16">
-                <AvatarImage src={`https://yourtube-elevance-internship-project.onrender.com/${friend.profilePic}`} />
+                <AvatarImage src={friend.profilePic} />
                 <AvatarFallback className="text-xl bg-blue-100 text-blue-600">
                   {friend.channelname ? friend.channelname[0].toUpperCase() : "U"}
                 </AvatarFallback>

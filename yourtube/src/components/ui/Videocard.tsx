@@ -24,7 +24,7 @@ export default function VideoCard({ video }: any) {
       <div className="space-y-3">
         <div className="relative aspect-video rounded-lg overflow-hidden bg-muted">
           <video
-            src={`https://yourtube-elevance-internship-project.onrender.com/${video?.filepath}`}
+            src={video?.filepath}
             className="object-cover group-hover:scale-105 transition-transform duration-200"
             onLoadedMetadata={handleLoadedMetadata}
           />

@@ -58,7 +58,7 @@ const VideoUploader = ({ channelId, channelName }: any) => {
     formdata.append("videotitle", videoTitle);
     formdata.append("videochanel", channelName);
     formdata.append("uploader", channelId);
-    console.log(formdata)
+
     try {
       setIsUploading(true);
       setUploadProgress(0);

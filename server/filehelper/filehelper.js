@@ -1,22 +1,17 @@
 "use strict";
 import multer from "multer";
-const storage = multer.diskStorage({
-  destination: (req, res, cb) => {
-    cb(null, "uploads");
-  },
-  filename: (req, file, cb) => {
-    cb(
-      null,
-      new Date().toISOString().replace(/:/g, "-") + "-" + file.originalname
-    );
+import { CloudinaryStorage } from "multer-storage-cloudinary";
+import cloudinary from "../config/cloudinary.js";
+
+const storage = new CloudinaryStorage({
+  cloudinary: cloudinary,
+  params: {
+    folder: "yourtube_media",
+    resource_type: "auto",
+    allowed_formats: ["mp4", "webm", "mov", "avi", "jpg", "jpeg", "png", "webp"],
   },
 });
-const filefilter = (req, file, cb) => {
-  if (file.mimetype === "video/mp4" || file.mimetype === "video/webm" || file.mimetype === "video/x-matroska") {
-    cb(null, true);
-  } else {
-    cb(null, false);
-  }
-};
-const upload = multer({ storage: storage, fileFilter: filefilter });
+
+const upload = multer({ storage: storage });
+
 export default upload;
