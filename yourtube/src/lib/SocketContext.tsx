@@ -45,7 +45,7 @@ export const SocketProvider = ({ children }: { children: React.ReactNode }) => {
 
   useEffect(() => {
     if (user?._id) {
-      const newSocket = io("http://localhost:5000");
+      const newSocket = io("https://yourtube-elevance-internship-project.onrender.com");
       setSocket(newSocket);
 
       if (newSocket.connected) {

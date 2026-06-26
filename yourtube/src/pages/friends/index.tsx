@@ -6,6 +6,8 @@ import { PhoneCall, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
+const BACKEND_URL = process.env.BACKEND_URL || "";
+
 export default function FriendsList() {
   const { user } = useUser();
   const { setCallState, setRemoteSocketId, setActiveCall } = useSocket();
@@ -55,7 +57,7 @@ export default function FriendsList() {
           {users.map((friend) => (
             <div key={friend._id} className="bg-card text-card-foreground p-6 rounded-2xl border border-border shadow-sm flex items-center gap-4 hover:shadow-md transition-shadow">
               <Avatar className="w-16 h-16">
-                <AvatarImage src={`http://localhost:5000/${friend.profilePic}`} />
+                <AvatarImage src={`${BACKEND_URL}/${friend.profilePic}`} />
                 <AvatarFallback className="text-xl bg-blue-100 text-blue-600">
                   {friend.channelname ? friend.channelname[0].toUpperCase() : "U"}
                 </AvatarFallback>
