@@ -157,7 +157,6 @@ export const translateComment = async (req, res) => {
   if (!lang || typeof lang !== "string") {
     return res.status(400).json({ message: "Invalid language" });
   }
-
   if (!mongoose.Types.ObjectId.isValid(_id)) {
     return res.status(404).json({ message: "Invalid ID" });
   }
@@ -167,31 +166,54 @@ export const translateComment = async (req, res) => {
     if (!c) return res.status(404).json({ message: "Comment not found" });
 
     const text = c.commentbody;
+    if (!text?.trim()) return res.status(200).json({ translatedText: text });
 
-    // If target is English, return original text
-    if (lang === "en") {
-      return res.status(200).json({ translatedText: text });
-    }
-
-    // Cache check — return if already translated
+    // Return cached translation
     if (c.translations?.[lang]) {
       return res.status(200).json({ translatedText: c.translations[lang] });
     }
 
-    // MyMemory Free Translation API
-    const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=en|${lang}`;
+    let translatedText = null;
 
-    const response = await fetch(url);
-    const data = await response.json();
-
-    const translatedText = data?.responseData?.translatedText;
-
-    if (!translatedText || translatedText.includes("INVALID") || translatedText.includes("NO CONTENT")) {
-      console.error("MyMemory error:", data);
-      return res.status(500).json({ message: "Translation failed" });
+    // METHOD 1: Google Translate via fetch (auto-detects any language → any language)
+    try {
+      const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${lang}&dt=t&q=${encodeURIComponent(text)}`;
+      const response = await fetch(url, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        if (data?.[0]) {
+          translatedText = data[0].map(i => i[0]).filter(Boolean).join("");
+        }
+      }
+    } catch (e) {
+      console.log("Google Translate failed, trying fallback:", e.message);
     }
 
-    // Save to cache in DB
+    // METHOD 2: MyMemory fallback (English → target)
+    if (!translatedText) {
+      try {
+        const sourceLang = lang === "en" ? "hi" : "en";
+        const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${sourceLang}|${lang}`;
+        const response = await fetch(url);
+        const data = await response.json();
+        const result = data?.responseData?.translatedText;
+        if (result && !result.includes("INVALID") && !result.includes("NO CONTENT")) {
+          translatedText = result;
+        }
+      } catch (e) {
+        console.log("MyMemory also failed:", e.message);
+      }
+    }
+
+    if (!translatedText) {
+      return res.status(500).json({ message: "Translation failed. Try again later." });
+    }
+
+    // Cache it in DB
     await comment.updateOne(
       { _id },
       { $set: { [`translations.${lang}`]: translatedText } }
@@ -201,6 +223,6 @@ export const translateComment = async (req, res) => {
 
   } catch (err) {
     console.error("Translate error:", err);
-    return res.status(500).json({ message: "Server error during translation" });
+    return res.status(500).json({ message: "Server error" });
   }
 };
