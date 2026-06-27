@@ -1,6 +1,5 @@
 import comment from "../Modals/comment.js";
 import mongoose from "mongoose";
-import https from "https";
 
 // ✅ Create Comment
 export const postcomment = async (req, res) => {
@@ -174,28 +173,16 @@ export const translateComment = async (req, res) => {
     }
 
     try {
-      const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${lang}&dt=t&q=${encodeURIComponent(text)}`;
-      
-      const translatedText = await new Promise((resolve, reject) => {
-        https.get(url, (resp) => {
-          let data = "";
-          resp.on("data", (chunk) => { data += chunk; });
-          resp.on("end", () => {
-            try {
-              const parsed = JSON.parse(data);
-              if (parsed && parsed[0]) {
-                resolve(parsed[0].map((i) => i[0]).join(""));
-              } else {
-                reject(new Error("Invalid translation response"));
-              }
-            } catch (e) {
-              reject(e);
-            }
-          });
-        }).on("error", (err) => {
-          reject(err);
-        });
-      });
+  const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=auto|${lang}`;
+
+  const response = await fetch(url);
+  const data = await response.json();
+
+  if (!data.responseData?.translatedText) {
+    throw new Error("Empty translation response");
+  }
+
+  const translatedText = data.responseData.translatedText;
 
       // ✅ SAFE DB WRITE (NO CRASH)
       await comment.updateOne(
