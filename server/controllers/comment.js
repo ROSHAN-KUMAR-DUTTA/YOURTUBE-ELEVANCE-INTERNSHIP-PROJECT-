@@ -1,4 +1,3 @@
-import { translate } from '@vitalets/google-translate-api';
 import comment from "../Modals/comment.js";
 import mongoose from "mongoose";
 
@@ -166,20 +165,22 @@ export const translateComment = async (req, res) => {
 
     const text = c.commentbody;
 
-    // Return from cache instantly
     if (c.translations?.[lang]) {
       return res.status(200).json({ translatedText: c.translations[lang] });
     }
 
-    // Translate using Google Translate (auto-detects source language)
-    const result = await translate(text, { to: lang });
-    const translatedText = result.text;
+    // Direct Google Translate via fetch (no package, no limit)
+    const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${lang}&dt=t&q=${encodeURIComponent(text)}`;
+    const response = await fetch(url, {
+      headers: { "User-Agent": "Mozilla/5.0" }
+    });
+    const data = await response.json();
+    const translatedText = data[0].map((i) => i[0]).filter(Boolean).join("");
 
     if (!translatedText) {
       return res.status(500).json({ message: "Translation failed" });
     }
 
-    // Save to cache so same translation isn't repeated
     await comment.updateOne(
       { _id },
       { $set: { [`translations.${lang}`]: translatedText } }
@@ -189,6 +190,6 @@ export const translateComment = async (req, res) => {
 
   } catch (err) {
     console.error("Translate error:", err.message);
-    return res.status(500).json({ message: "Translation failed. Try again." });
+    return res.status(500).json({ message: "Translation failed" });
   }
 };
