@@ -1,3 +1,4 @@
+import { translate } from '@vitalets/google-translate-api';
 import comment from "../Modals/comment.js";
 import mongoose from "mongoose";
 
@@ -149,7 +150,6 @@ export const reactToComment = async (req, res) => {
 };
 
 
-// REPLACE THE ENTIRE translateComment FUNCTION WITH THIS:
 export const translateComment = async (req, res) => {
   const { id: _id } = req.params;
   const { lang } = req.body;
@@ -166,56 +166,20 @@ export const translateComment = async (req, res) => {
 
     const text = c.commentbody;
 
-    // Return from cache if already translated
+    // Return from cache instantly
     if (c.translations?.[lang]) {
       return res.status(200).json({ translatedText: c.translations[lang] });
     }
 
-    // Multiple Lingva instances as fallback
-    const LINGVA_INSTANCES = [
-      "https://lingva.ml",
-      "https://lingva.thedaviddelta.com",
-      "https://translate.plausibility.cloud"
-    ];
-
-    let translatedText = null;
-
-    for (const instance of LINGVA_INSTANCES) {
-      try {
-        const url = `${instance}/api/v1/auto/${lang}/${encodeURIComponent(text)}`;
-        const response = await fetch(url, { signal: AbortSignal.timeout(5000) });
-        const data = await response.json();
-
-        if (data?.translation) {
-          translatedText = data.translation;
-          break; // Success — stop trying other instances
-        }
-      } catch (e) {
-        console.log(`Lingva instance ${instance} failed, trying next...`);
-      }
-    }
-
-    // Final fallback: MyMemory
-    if (!translatedText) {
-      try {
-        const sourceLang = lang === "en" ? "hi" : "en";
-        const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${sourceLang}|${lang}`;
-        const response = await fetch(url);
-        const data = await response.json();
-        const result = data?.responseData?.translatedText;
-        if (result && !result.includes("INVALID")) {
-          translatedText = result;
-        }
-      } catch (e) {
-        console.log("MyMemory fallback also failed");
-      }
-    }
+    // Translate using Google Translate (auto-detects source language)
+    const result = await translate(text, { to: lang });
+    const translatedText = result.text;
 
     if (!translatedText) {
-      return res.status(500).json({ message: "Translation unavailable. Try again." });
+      return res.status(500).json({ message: "Translation failed" });
     }
 
-    // Cache in DB
+    // Save to cache so same translation isn't repeated
     await comment.updateOne(
       { _id },
       { $set: { [`translations.${lang}`]: translatedText } }
@@ -224,7 +188,7 @@ export const translateComment = async (req, res) => {
     return res.status(200).json({ translatedText });
 
   } catch (err) {
-    console.error("Translate error:", err);
-    return res.status(500).json({ message: "Server error" });
+    console.error("Translate error:", err.message);
+    return res.status(500).json({ message: "Translation failed. Try again." });
   }
 };
