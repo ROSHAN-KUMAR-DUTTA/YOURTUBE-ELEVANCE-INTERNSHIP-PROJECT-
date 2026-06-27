@@ -120,7 +120,7 @@ export const manualLogin = async (req, res) => {
       try {
         const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
         const ipQuery = ip && ip !== '::1' && ip !== '127.0.0.1' ? `${ip}/` : '';
-        const response = await fetch(`http://ip-api.com/json/${ipQuery}`);
+        const response = await fetch(`https://ip-api.com/json/${ipQuery}`);
         const data = await response.json();
         if (data && data.status === "success" && data.regionName) {
           currentState = data.regionName;
@@ -244,4 +244,4 @@ export const subscribeChannel = async (req, res) => {
     return res.status(500).json({ message: "Internal server error" });
   }
 };
-
+
