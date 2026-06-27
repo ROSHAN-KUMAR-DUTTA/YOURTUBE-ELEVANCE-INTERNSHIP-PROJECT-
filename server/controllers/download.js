@@ -34,7 +34,7 @@ export const downloadVideo = async (req, res) => {
       await user.save();
     }
 
-    const fileUrl = `${process.env.BACKEND_URL || "https://yourtube-elevance-internship-project.onrender.com"}/${video.filepath}`;
+    const fileUrl = video.filepath;
 
     // Check if already downloaded
     const existingDownload = await Download.findOne({ userId, videoId });
@@ -43,7 +43,11 @@ export const downloadVideo = async (req, res) => {
         userId,
         videoId,
         title: video.videotitle,
-        thumbnail: video.filepath ? `${process.env.BACKEND_URL || "https://yourtube-elevance-internship-project.onrender.com"}/${video.filepath.replace('.mp4', '.jpg')}` : "", // Simple mock for thumbnail if no proper thumbnail field
+        thumbnail: video.filepath 
+  ? video.filepath
+      .replace('/upload/', '/upload/w_400,h_225,c_fill,so_0/')
+      .replace(/\.(mp4|mov|avi|mkv|webm)$/i, '.jpg') 
+  : "",
         fileUrl,
         duration: "00:00" // You could pass actual duration if available
       });
