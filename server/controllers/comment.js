@@ -149,6 +149,7 @@ export const reactToComment = async (req, res) => {
 };
 
 
+// REPLACE THE ENTIRE translateComment FUNCTION WITH THIS:
 export const translateComment = async (req, res) => {
   const { id: _id } = req.params;
   const { lang } = req.body;
@@ -167,45 +168,39 @@ export const translateComment = async (req, res) => {
 
     const text = c.commentbody;
 
-    // ✅ CACHE CHECK
+    // If target is English, return original text
+    if (lang === "en") {
+      return res.status(200).json({ translatedText: text });
+    }
+
+    // Cache check — return if already translated
     if (c.translations?.[lang]) {
       return res.status(200).json({ translatedText: c.translations[lang] });
     }
 
-    try {
- if (lang === "en") {
-  return res.status(200).json({ translatedText: text });
-}
+    // MyMemory Free Translation API
+    const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=en|${lang}`;
 
-const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=en|${lang}`;
+    const response = await fetch(url);
+    const data = await response.json();
 
-const response = await fetch(url);
-const result = await response.json();
+    const translatedText = data?.responseData?.translatedText;
 
-if (!result.responseData?.translatedText || 
-    result.responseData.translatedText.includes("INVALID")) {
-  throw new Error("Translation failed");
-}
-
-const translatedText = result.responseData.translatedText;
-
-
-  
-
-      // ✅ SAFE DB WRITE (NO CRASH)
-      await comment.updateOne(
-        { _id },
-        { $set: { [`translations.${lang}`]: translatedText } }
-      );
-
-      return res.status(200).json({ translatedText });
-
-    } catch (apiErr) {
-      console.log("Translation API error:", apiErr);
-      return res.status(500).json({ message: "Translation API failed" });
+    if (!translatedText || translatedText.includes("INVALID") || translatedText.includes("NO CONTENT")) {
+      console.error("MyMemory error:", data);
+      return res.status(500).json({ message: "Translation failed" });
     }
 
-  } catch {
-    return res.status(500).json({ message: "Server error" });
+    // Save to cache in DB
+    await comment.updateOne(
+      { _id },
+      { $set: { [`translations.${lang}`]: translatedText } }
+    );
+
+    return res.status(200).json({ translatedText });
+
+  } catch (err) {
+    console.error("Translate error:", err);
+    return res.status(500).json({ message: "Server error during translation" });
   }
 };
