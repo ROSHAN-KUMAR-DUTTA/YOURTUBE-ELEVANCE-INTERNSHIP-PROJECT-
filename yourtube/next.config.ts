@@ -12,11 +12,12 @@ const nextConfig: NextConfig = {
         headers: [
           {
             key: "Cross-Origin-Opener-Policy",
-            value: "same-origin-allow-popups", // ← allows Firebase popup
+            value: "same-origin-allow-popups",
           },
         ],
       },
     ];
   },
 };
+
 export default nextConfig;
