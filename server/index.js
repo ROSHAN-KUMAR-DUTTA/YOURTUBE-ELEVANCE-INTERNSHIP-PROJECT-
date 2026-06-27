@@ -18,6 +18,8 @@ import { startCronJobs } from "./jobs/cron.js";
 import path from "path";
 import { createServer } from "http";
 import { Server } from "socket.io";
+import { setDefaultResultOrder } from "dns";
+setDefaultResultOrder("ipv4first");
 
 dotenv.config();
 const app = express();
