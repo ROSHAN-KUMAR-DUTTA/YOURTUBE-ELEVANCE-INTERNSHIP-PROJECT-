@@ -154,46 +154,48 @@ export const translateComment = async (req, res) => {
   const { id: _id } = req.params;
   const { lang } = req.body;
 
-  if (!lang || typeof lang !== "string") {
+  if (!lang || typeof lang !== "string")
     return res.status(400).json({ message: "Invalid language" });
-  }
-  if (!mongoose.Types.ObjectId.isValid(_id)) {
+
+  if (!mongoose.Types.ObjectId.isValid(_id))
     return res.status(404).json({ message: "Invalid ID" });
-  }
 
   try {
     const c = await comment.findById(_id);
     if (!c) return res.status(404).json({ message: "Comment not found" });
 
     const text = c.commentbody;
-    if (!text?.trim()) return res.status(200).json({ translatedText: text });
 
-    // Return cached translation
+    // Return from cache if already translated
     if (c.translations?.[lang]) {
       return res.status(200).json({ translatedText: c.translations[lang] });
     }
 
+    // Multiple Lingva instances as fallback
+    const LINGVA_INSTANCES = [
+      "https://lingva.ml",
+      "https://lingva.thedaviddelta.com",
+      "https://translate.plausibility.cloud"
+    ];
+
     let translatedText = null;
 
-    // METHOD 1: Google Translate via fetch (auto-detects any language → any language)
-    try {
-      const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${lang}&dt=t&q=${encodeURIComponent(text)}`;
-      const response = await fetch(url, {
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-        }
-      });
-      if (response.ok) {
+    for (const instance of LINGVA_INSTANCES) {
+      try {
+        const url = `${instance}/api/v1/auto/${lang}/${encodeURIComponent(text)}`;
+        const response = await fetch(url, { signal: AbortSignal.timeout(5000) });
         const data = await response.json();
-        if (data?.[0]) {
-          translatedText = data[0].map(i => i[0]).filter(Boolean).join("");
+
+        if (data?.translation) {
+          translatedText = data.translation;
+          break; // Success — stop trying other instances
         }
+      } catch (e) {
+        console.log(`Lingva instance ${instance} failed, trying next...`);
       }
-    } catch (e) {
-      console.log("Google Translate failed, trying fallback:", e.message);
     }
 
-    // METHOD 2: MyMemory fallback (English → target)
+    // Final fallback: MyMemory
     if (!translatedText) {
       try {
         const sourceLang = lang === "en" ? "hi" : "en";
@@ -201,19 +203,19 @@ export const translateComment = async (req, res) => {
         const response = await fetch(url);
         const data = await response.json();
         const result = data?.responseData?.translatedText;
-        if (result && !result.includes("INVALID") && !result.includes("NO CONTENT")) {
+        if (result && !result.includes("INVALID")) {
           translatedText = result;
         }
       } catch (e) {
-        console.log("MyMemory also failed:", e.message);
+        console.log("MyMemory fallback also failed");
       }
     }
 
     if (!translatedText) {
-      return res.status(500).json({ message: "Translation failed. Try again later." });
+      return res.status(500).json({ message: "Translation unavailable. Try again." });
     }
 
-    // Cache it in DB
+    // Cache in DB
     await comment.updateOne(
       { _id },
       { $set: { [`translations.${lang}`]: translatedText } }
