@@ -1,17 +1,18 @@
 export const translateText = async (text: string, targetLang: string) => {
-  const res = await fetch("https://translate.argosopentech.com/translate", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      q: text,
-      source: "auto",
-      target: targetLang,
-      format: "text"
-    })
-  });
+  const sourceLang = targetLang === "en" ? "hi" : "en";
+  
+  try {
+    // Primary: MyMemory (reliable, no key needed)
+    const res = await fetch(
+      `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${sourceLang}|${targetLang}`
+    );
+    const data = await res.json();
 
-  const data = await res.json();
-  return data.translatedText;
+    if (data.responseData?.translatedText) {
+      return data.responseData.translatedText;
+    }
+    throw new Error("No translation");
+  } catch {
+    return text; // fallback: return original text
+  }
 };

@@ -173,7 +173,8 @@ export const translateComment = async (req, res) => {
     }
 
     try {
-  const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=auto|${lang}`;
+ const sourceLang = lang === "en" ? "hi" : "en";
+const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${sourceLang}|${lang}`;
 
   const response = await fetch(url);
   const data = await response.json();
