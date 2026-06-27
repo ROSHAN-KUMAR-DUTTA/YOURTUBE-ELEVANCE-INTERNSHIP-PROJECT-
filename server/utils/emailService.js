@@ -40,13 +40,15 @@ export const sendInvoiceEmail = async (user, invoice) => {
   };
 
   try {
-    await transporter.sendMail(mailOptions);
-    console.log("Invoice email sent to:", user.email);
-    return true;
-  } catch (error) {
-    console.error("Error sending invoice email:", error);
-    return false;
-  }
+  await transporter.sendMail(mailOptions);
+  console.log("✅ Invoice email sent to:", user.email);
+  return true;
+} catch (error) {
+  console.error("❌ Email failed - Code:", error.code);
+  console.error("❌ Email failed - Message:", error.message);
+  console.error("❌ Check NODEMAILER_EMAIL and NODEMAILER_PASSWORD on Render");
+  return false;
+}
 };
 
 export const sendOtpEmail = async (email, otp) => {
@@ -72,4 +74,5 @@ export const sendOtpEmail = async (email, otp) => {
     console.error("Error sending OTP email:", error);
     return false;
   }
+  
 };
