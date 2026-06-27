@@ -1,18 +1,10 @@
 export const translateText = async (text: string, targetLang: string) => {
-  const sourceLang = targetLang === "en" ? "hi" : "en";
-  
   try {
-    // Primary: MyMemory (reliable, no key needed)
-    const res = await fetch(
-      `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${sourceLang}|${targetLang}`
-    );
+    const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${targetLang}&dt=t&q=${encodeURIComponent(text)}`;
+    const res = await fetch(url);
     const data = await res.json();
-
-    if (data.responseData?.translatedText) {
-      return data.responseData.translatedText;
-    }
-    throw new Error("No translation");
+    return data[0].map((i: any) => i[0]).filter(Boolean).join('');
   } catch {
-    return text; // fallback: return original text
+    return text;
   }
 };

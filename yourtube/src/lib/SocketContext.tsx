@@ -45,7 +45,14 @@ export const SocketProvider = ({ children }: { children: React.ReactNode }) => {
 
   useEffect(() => {
     if (user?._id) {
-      const newSocket = io(process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000");
+      const newSocket = io(
+  process.env.NEXT_PUBLIC_API_URL || "https://yourtube-elevance-internship-project.onrender.com",
+  {
+    transports: ["polling", "websocket"], // polling first for Render
+    reconnectionAttempts: 5,
+    reconnectionDelay: 1000,
+  }
+);
       setSocket(newSocket);
 
       if (newSocket.connected) {

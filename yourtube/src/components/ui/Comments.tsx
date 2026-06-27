@@ -79,22 +79,20 @@ const Comments = ({ videoId }: any) => {
 
   // 🌍 TRANSLATE
   const handleTranslate = async (id: string, text: string) => {
-    try {
-      const res = await axiosInstance.post(`/comment/translate/${id}`, {
-        text,
-        lang
-      });
+  try {
+    const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${lang}&dt=t&q=${encodeURIComponent(text)}`;
+    const res = await fetch(url);
+    const data = await res.json();
+    const translatedText = data[0]
+      .map((i: any) => i[0])
+      .filter(Boolean)
+      .join('');
 
-      if (res.data.translatedText) {
-        setTranslated(prev => ({
-          ...prev,
-          [id]: res.data.translatedText
-        }));
-      }
-    } catch (err) {
-      console.log("Translate error:", err);
-    }
-  };
+    setTranslated(prev => ({ ...prev, [id]: translatedText }));
+  } catch (err) {
+    console.log("Translate error:", err);
+  }
+};
 
   // ➕ ADD COMMENT
   const handleSubmitComment = async () => {
