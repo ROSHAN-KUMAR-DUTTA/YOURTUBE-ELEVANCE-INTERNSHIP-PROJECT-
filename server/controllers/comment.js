@@ -173,17 +173,24 @@ export const translateComment = async (req, res) => {
     }
 
     try {
- const sourceLang = lang === "en" ? "hi" : "en";
-const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${sourceLang}|${lang}`;
+ if (lang === "en") {
+  return res.status(200).json({ translatedText: text });
+}
 
-  const response = await fetch(url);
-  const data = await response.json();
+const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=en|${lang}`;
 
-  if (!data.responseData?.translatedText) {
-    throw new Error("Empty translation response");
-  }
+const response = await fetch(url);
+const result = await response.json();
 
-  const translatedText = data.responseData.translatedText;
+if (!result.responseData?.translatedText || 
+    result.responseData.translatedText.includes("INVALID")) {
+  throw new Error("Translation failed");
+}
+
+const translatedText = result.responseData.translatedText;
+
+
+  
 
       // ✅ SAFE DB WRITE (NO CRASH)
       await comment.updateOne(
