@@ -1,16 +1,6 @@
 import dotenv from "dotenv";
 dotenv.config();
 
-const transporter = nodemailer.createTransport({
-  host: "smtp-relay.brevo.com",
-  port: 587,
-  secure: false,
-  auth: {
-    user: process.env.NODEMAILER_EMAIL, // b031ae001@smtp-brevo.com
-    pass: process.env.NODEMAILER_PASSWORD, // xsmtpsib-xxx...
-  },
-});
-
 export const sendInvoiceEmail = async (user, invoice) => {
   try {
     const response = await fetch("https://api.brevo.com/v3/smtp/email", {
@@ -23,7 +13,7 @@ export const sendInvoiceEmail = async (user, invoice) => {
       body: JSON.stringify({
         sender: {
           name: "YourTube Premium",
-          email: "rodutta2007@gmail.com", // ← your verified real email
+          email: "rodutta2007@gmail.com",
         },
         to: [{ email: user.email, name: user.name || "User" }],
         subject: `Invoice - YourTube ${invoice.planName} Plan`,
@@ -47,14 +37,11 @@ export const sendInvoiceEmail = async (user, invoice) => {
         `,
       }),
     });
-
     const result = await response.json();
-
     if (!response.ok) {
       console.error("❌ Brevo API error:", JSON.stringify(result));
       return false;
     }
-
     console.log("✅ Invoice email sent to:", user.email);
     return true;
   } catch (err) {
@@ -89,13 +76,11 @@ export const sendOtpEmail = async (email, otp) => {
         `,
       }),
     });
-
     const result = await response.json();
     if (!response.ok) {
       console.error("❌ OTP email error:", JSON.stringify(result));
       return false;
     }
-
     console.log("✅ OTP email sent to:", email);
     return true;
   } catch (err) {
