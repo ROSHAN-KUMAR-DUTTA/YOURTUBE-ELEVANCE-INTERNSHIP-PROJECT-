@@ -214,9 +214,12 @@ export const subscribeChannel = async (req, res) => {
     const channel = await users.findById(channelId);
     const currentUser = await users.findById(userId);
 
-    if (!channel || !currentUser) {
-      return res.status(404).json({ message: "User or Channel not found" });
-    }
+    if (!currentUser) {
+  return res.status(404).json({ message: "Logged in user not found. Please re-login." });
+}
+if (!channel) {
+  return res.status(404).json({ message: "Channel not found in database." });
+}
 
     const isSubscribed = currentUser.subscribedChannels.includes(channelId);
 

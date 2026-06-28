@@ -8,7 +8,7 @@ import {
   Share,
   ThumbsDown,
   ThumbsUp,
-  Crown
+  Crown,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { useUser } from "@/lib/AuthContext";
@@ -60,8 +60,6 @@ const VideoInfo = ({ video }: any) => {
     handleviews();
   }, [user]);
 
-
-
   const handleDownload = async () => {
     if (!user) {
       alert("Please login to download videos.");
@@ -69,7 +67,7 @@ const VideoInfo = ({ video }: any) => {
     }
     try {
       const res = await axiosInstance.post(`/download/${video._id}`, {
-        userId: user._id
+        userId: user._id,
       });
       if (res.data.url) {
         window.open(res.data.url, "_blank");
@@ -123,20 +121,33 @@ const VideoInfo = ({ video }: any) => {
 
   const handleSubscribe = async () => {
     if (!user) {
-      alert("Please login to subscribe.");
+      alert("Please login to subscribe");
       return;
     }
+
     try {
-      const res = await axiosInstance.post(`/user/subscribe/${video.uploader}`, {
+      const res = await axiosInstance.post(`/user/subscribe/${video?.userId}`, {
         userId: user._id,
       });
-      setIsSubscribed(res.data.subscribed);
-      if (res.data.user) {
-        setUser(res.data.user);
-        localStorage.setItem("user", JSON.stringify(res.data.user));
+
+      if (res.data.subscribed !== undefined) {
+        setIsSubscribed(res.data.subscribed);
+        // Update local user state
+        if (res.data.user) {
+          setUser(res.data.user);
+          localStorage.setItem("user", JSON.stringify(res.data.user));
+        }
       }
-    } catch (error) {
-      console.log("Subscription Error:", error);
+    } catch (err: any) {
+      console.error("Subscription Error:", err);
+      const msg = err.response?.data?.message || "Subscription failed";
+
+      if (msg.includes("re-login")) {
+        alert("Session expired. Please login again.");
+        localStorage.removeItem("user");
+        localStorage.removeItem("token");
+        window.location.href = "/";
+      }
     }
   };
 
@@ -174,18 +185,20 @@ const VideoInfo = ({ video }: any) => {
           </Avatar>
           <div className="min-w-0">
             <h3 className="font-medium truncate">{video.videochanel}</h3>
-            <p className="text-xs sm:text-sm text-muted-foreground truncate">1.2M subscribers</p>
+            <p className="text-xs sm:text-sm text-muted-foreground truncate">
+              1.2M subscribers
+            </p>
           </div>
           {(!user || user._id !== video.uploader) && (
-            <Button 
-              className={`ml-2 sm:ml-4 shrink-0 ${isSubscribed ? 'bg-gray-200 text-black hover:bg-gray-300 dark:bg-gray-700 dark:text-white dark:hover:bg-gray-600' : 'bg-white text-black hover:bg-gray-200 dark:bg-red-600 dark:text-white dark:hover:bg-red-700'}`}
+            <Button
+              className={`ml-2 sm:ml-4 shrink-0 ${isSubscribed ? "bg-gray-200 text-black hover:bg-gray-300 dark:bg-gray-700 dark:text-white dark:hover:bg-gray-600" : "bg-white text-black hover:bg-gray-200 dark:bg-red-600 dark:text-white dark:hover:bg-red-700"}`}
               onClick={handleSubscribe}
             >
               {isSubscribed ? "Subscribed" : "Subscribe"}
             </Button>
           )}
         </div>
-        
+
         {/* Action Buttons Container - Scrollable on mobile */}
         <div className="flex items-center gap-2 overflow-x-auto pb-2 md:pb-0 scrollbar-hide -mx-4 px-4 md:mx-0 md:px-0">
           <div className="flex items-center bg-gray-100 text-black dark:bg-[#272727] dark:text-white rounded-full shrink-0">
