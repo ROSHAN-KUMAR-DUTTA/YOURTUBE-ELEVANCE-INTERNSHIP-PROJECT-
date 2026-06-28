@@ -3,17 +3,13 @@ import dotenv from "dotenv";
 dotenv.config();
 
 const transporter = nodemailer.createTransport({
-  host: "smtp.gmail.com",   // explicit host instead of service: "gmail"
-  port: 587,                // TLS port
-  secure: false,            // false for port 587 (STARTTLS)
-  family: 4,                // ✅ Force IPv4 — fixes Render's IPv6 block
+  host: "smtp-relay.brevo.com",
+  port: 587,
+  secure: false,
   auth: {
-    user: process.env.NODEMAILER_EMAIL,
-    pass: process.env.NODEMAILER_PASSWORD,
+    user: process.env.NODEMAILER_EMAIL,    // b031ae001@smtp-brevo.com
+    pass: process.env.NODEMAILER_PASSWORD, // xsmtpsib-xxx...
   },
-  tls: {
-    rejectUnauthorized: false  // prevents TLS certificate issues on Render
-  }
 });
 
 export const sendInvoiceEmail = async (user, invoice) => {
