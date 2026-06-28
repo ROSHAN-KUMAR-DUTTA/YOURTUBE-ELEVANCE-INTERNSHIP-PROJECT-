@@ -120,37 +120,52 @@ const VideoInfo = ({ video }: any) => {
   };
 
   const handleSubscribe = async () => {
-    if (!user) {
-      alert("Please login to subscribe");
+  if (!user) {
+    alert("Please login to subscribe");
+    return;
+  }
+
+  try {
+    // Step 1: Find channel owner using channel name from video
+    const channelName = video?.videochanel;
+    if (!channelName) {
+      alert("Channel not found");
       return;
     }
 
-    try {
-      const res = await axiosInstance.post(`/user/subscribe/${video?.userId}`, {
-        userId: user._id,
-      });
+    const channelRes = await axiosInstance.get(
+      `/user/${encodeURIComponent(channelName)}`
+    );
+    const channelOwner = channelRes.data;
 
-      if (res.data.subscribed !== undefined) {
-        setIsSubscribed(res.data.subscribed);
-        // Update local user state
-        if (res.data.user) {
-          setUser(res.data.user);
-          localStorage.setItem("user", JSON.stringify(res.data.user));
-        }
-      }
-    } catch (err: any) {
-      console.error("Subscription Error:", err);
-      const msg = err.response?.data?.message || "Subscription failed";
+    if (!channelOwner?._id) {
+      alert("Channel owner not found");
+      return;
+    }
 
-      if (msg.includes("re-login")) {
-        alert("Session expired. Please login again.");
-        localStorage.removeItem("user");
-        localStorage.removeItem("token");
-        window.location.href = "/";
+    // Step 2: Subscribe using their actual MongoDB _id
+    const res = await axiosInstance.post(
+      `/user/subscribe/${channelOwner._id}`,
+      { userId: user._id }
+    );
+
+    if (res.data.subscribed !== undefined) {
+      setIsSubscribed(res.data.subscribed);
+      if (res.data.user) {
+        setUser(res.data.user);
+        localStorage.setItem("user", JSON.stringify(res.data.user));
       }
     }
-  };
 
+  } catch (err: any) {
+    console.error("Subscription Error:", err);
+    const msg = err.response?.data?.message || "Subscription failed";
+    if (msg.includes("re-login")) {
+      localStorage.removeItem("user");
+      window.location.href = "/";
+    }
+  }
+};
   const handleDislike = async () => {
     if (!user) return;
     try {
