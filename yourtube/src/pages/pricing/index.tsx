@@ -9,7 +9,12 @@ const PLANS = [
     name: "Free",
     price: "0",
     watchLimit: "5 mins/day",
-    features: ["Standard quality", "Watch up to 5 minutes daily", "Ad-supported", "Basic support"],
+    features: [
+      "Standard quality",
+      "Watch up to 5 minutes daily",
+      "Ad-supported",
+      "Basic support",
+    ],
     icon: <Shield className="w-6 h-6 text-muted-foreground" />,
     color: "bg-muted",
     buttonVariant: "outline",
@@ -18,7 +23,12 @@ const PLANS = [
     name: "Bronze",
     price: "10",
     watchLimit: "7 mins/day",
-    features: ["HD quality", "Watch up to 7 minutes daily", "No ads", "Priority support"],
+    features: [
+      "HD quality",
+      "Watch up to 7 minutes daily",
+      "No ads",
+      "Priority support",
+    ],
     icon: <Star className="w-6 h-6 text-amber-600" />,
     color: "bg-amber-500/10 border-amber-200",
     buttonVariant: "outline",
@@ -27,7 +37,13 @@ const PLANS = [
     name: "Silver",
     price: "50",
     watchLimit: "10 mins/day",
-    features: ["Full HD quality", "Watch up to 10 minutes daily", "No ads", "Premium support", "Download videos"],
+    features: [
+      "Full HD quality",
+      "Watch up to 10 minutes daily",
+      "No ads",
+      "Premium support",
+      "Download videos",
+    ],
     icon: <Zap className="w-6 h-6 text-slate-400" />,
     color: "bg-slate-500/10 border-slate-200",
     buttonVariant: "outline",
@@ -36,7 +52,14 @@ const PLANS = [
     name: "Gold",
     price: "100",
     watchLimit: "Unlimited",
-    features: ["4K Ultra HD", "Unlimited watch time", "No ads", "24/7 VIP Support", "Download videos", "Early access"],
+    features: [
+      "4K Ultra HD",
+      "Unlimited watch time",
+      "No ads",
+      "24/7 VIP Support",
+      "Download videos",
+      "Early access",
+    ],
     icon: <Crown className="w-6 h-6 text-yellow-500" />,
     color: "bg-yellow-500/10 border-yellow-400 shadow-yellow-100 shadow-xl",
     buttonVariant: "default",
@@ -45,14 +68,14 @@ const PLANS = [
 ];
 
 const planTiers: Record<string, number> = {
-  "Free": 0,
-  "Bronze": 1,
-  "Silver": 2,
-  "Gold": 3
+  Free: 0,
+  Bronze: 1,
+  Silver: 2,
+  Gold: 3,
 };
 
 const PricingPage = () => {
-  const { user } = useUser();
+  const { user, setUser } = useUser();
   const [loading, setLoading] = useState(false);
 
   const loadRazorpayScript = () => {
@@ -79,24 +102,35 @@ const PricingPage = () => {
     }
 
     try {
-      const order = await axiosInstance.post("/subscription/payment/create", { planName });
-      
+      const order = await axiosInstance.post("/subscription/payment/create", {
+        planName,
+      });
+
+      // FIND the mock payment success:
       if (order.data.id && order.data.id.startsWith("order_mock_")) {
-          const verifyRes = await axiosInstance.post("/subscription/payment/verify", {
-              razorpay_order_id: order.data.id,
-              razorpay_payment_id: "pay_mock_" + Date.now(),
-              razorpay_signature: "mock_signature",
-              userId: user._id,
-              planName
-          });
-          if (verifyRes.data.isPremium) {
-              if (verifyRes.data.user) {
-                  localStorage.setItem("user", JSON.stringify(verifyRes.data.user));
-              }
-              alert(`Successfully upgraded to ${planName} (Mock Mode)! Check your email for the invoice.`);
-              window.location.reload();
-          }
-          return;
+        const verifyRes = await axiosInstance.post(
+          "/subscription/payment/verify",
+          {
+            razorpay_order_id: order.data.id,
+            razorpay_payment_id: "pay_mock_" + Date.now(),
+            razorpay_signature: "mock_signature",
+            userId: user._id,
+            planName,
+          },
+        );
+
+        if (verifyRes.data.isPremium) {
+          const updatedUser = {
+            ...user,
+            isPremium: true,
+            currentPlan: planName,
+          };
+          setUser(updatedUser);
+          localStorage.setItem("user", JSON.stringify(updatedUser));
+          alert(`🎉 You are now on ${planName} Plan!`);
+          window.location.href = "/"; // ✅ full reload
+        }
+        return;
       }
 
       const options = {
@@ -106,25 +140,41 @@ const PricingPage = () => {
         name: `YourTube ${planName}`,
         description: `Upgrade to ${planName} Plan`,
         order_id: order.data.id,
+        // In your Razorpay handler function, REPLACE the success part:
         handler: async function (response: any) {
           try {
-            const verifyRes = await axiosInstance.post("/subscription/payment/verify", {
-              razorpay_order_id: response.razorpay_order_id,
-              razorpay_payment_id: response.razorpay_payment_id,
-              razorpay_signature: response.razorpay_signature,
-              userId: user._id,
-              planName
-            });
-            
+            const verifyRes = await axiosInstance.post(
+              "/subscription/payment/verify",
+              {
+                razorpay_order_id: response.razorpay_order_id,
+                razorpay_payment_id: response.razorpay_payment_id,
+                razorpay_signature: response.razorpay_signature,
+                userId: user._id,
+                planName,
+              },
+            );
+
             if (verifyRes.data.isPremium) {
-              if (verifyRes.data.user) {
-                localStorage.setItem("user", JSON.stringify(verifyRes.data.user));
-              }
-              alert(`Successfully upgraded to ${planName}! Check your email for the invoice.`);
-              window.location.href = "/";
+              // ✅ Update user in state AND localStorage immediately
+              const updatedUser = {
+                ...user,
+                isPremium: true,
+                currentPlan: planName,
+                watchLimit: verifyRes.data.user?.watchLimit || user.watchLimit,
+                subscriptionEndDate: verifyRes.data.user?.subscriptionEndDate,
+              };
+              setUser(updatedUser);
+              localStorage.setItem("user", JSON.stringify(updatedUser));
+
+              // ✅ Redirect home with page refresh so plan shows immediately
+              alert(
+                `🎉 You are now on ${planName} Plan! Invoice will be emailed shortly.`,
+              );
+              window.location.href = "/"; // full reload — forces fresh state
             }
           } catch (err) {
-            alert("Payment Verification Failed");
+            console.error("Verify error:", err);
+            alert("Payment done but verification failed. Contact support.");
           }
         },
         prefill: {
@@ -153,7 +203,8 @@ const PricingPage = () => {
           Choose your perfect plan
         </h2>
         <p className="mt-4 max-w-xl mx-auto text-xl text-muted-foreground">
-          Unlock unlimited viewing, premium quality, and exclusive features with our subscription tiers.
+          Unlock unlimited viewing, premium quality, and exclusive features with
+          our subscription tiers.
         </p>
       </div>
 
@@ -162,7 +213,9 @@ const PricingPage = () => {
           <div
             key={plan.name}
             className={`relative flex flex-col p-6 sm:p-8 rounded-2xl border ${plan.color} ${
-              plan.popular ? "lg:scale-105 z-10 border-yellow-400 shadow-xl" : "bg-card text-card-foreground border-border"
+              plan.popular
+                ? "lg:scale-105 z-10 border-yellow-400 shadow-xl"
+                : "bg-card text-card-foreground border-border"
             } transition-transform duration-300 hover:scale-[1.02] lg:hover:scale-105`}
           >
             {plan.popular && (
@@ -172,15 +225,19 @@ const PricingPage = () => {
                 </span>
               </div>
             )}
-            
+
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-2xl font-semibold text-foreground">{plan.name}</h3>
+              <h3 className="text-2xl font-semibold text-foreground">
+                {plan.name}
+              </h3>
               {plan.icon}
             </div>
 
             <div className="mt-4 mb-8 flex items-baseline text-5xl font-extrabold">
               ₹{plan.price}
-              <span className="ml-1 text-xl font-medium text-muted-foreground">/mo</span>
+              <span className="ml-1 text-xl font-medium text-muted-foreground">
+                /mo
+              </span>
             </div>
 
             <div className="flex items-center gap-2 mb-6 text-sm font-medium text-muted-foreground bg-card text-card-foreground/50 py-2 px-3 rounded-lg border border-border">
@@ -198,21 +255,25 @@ const PricingPage = () => {
             </ul>
 
             <Button
-              disabled={loading || plan.name === "Free" || (planTiers[plan.name] <= planTiers[user?.currentPlan || "Free"])}
+              disabled={
+                loading ||
+                plan.name === "Free" ||
+                planTiers[plan.name] <= planTiers[user?.currentPlan || "Free"]
+              }
               onClick={() => handleCheckout(plan.name)}
               className={`w-full font-medium ${
-                plan.popular 
-                  ? 'bg-yellow-500/100 hover:bg-yellow-600 text-white border-transparent' 
-                  : 'bg-card text-card-foreground text-foreground border border-gray-300 hover:bg-background'
+                plan.popular
+                  ? "bg-yellow-500/100 hover:bg-yellow-600 text-white border-transparent"
+                  : "bg-card text-card-foreground text-foreground border border-gray-300 hover:bg-background"
               }`}
               size="lg"
             >
-              {user?.currentPlan === plan.name 
-                ? "Current Plan" 
-                : planTiers[plan.name] < planTiers[user?.currentPlan || "Free"] 
+              {user?.currentPlan === plan.name
+                ? "Current Plan"
+                : planTiers[plan.name] < planTiers[user?.currentPlan || "Free"]
                   ? "Included in your plan"
-                  : plan.name === "Free" 
-                    ? "Included" 
+                  : plan.name === "Free"
+                    ? "Included"
                     : `Upgrade to ${plan.name}`}
             </Button>
           </div>
