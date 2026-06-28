@@ -51,7 +51,7 @@ export const updateprofile = async (req, res) => {
           description: description,
         },
       },
-      { new: true }
+      { returnDocument: 'after' }
     );
     return res.status(201).json(updatedata);
   } catch (error) {
@@ -227,7 +227,7 @@ if (!channel) {
       // Unsubscribe
       const updatedUser = await users.findByIdAndUpdate(userId, {
         $pull: { subscribedChannels: channelId }
-      }, { new: true });
+      }, { returnDocument: 'after' });
       await users.findByIdAndUpdate(channelId, {
         $pull: { subscribers: userId }
       });
@@ -236,7 +236,7 @@ if (!channel) {
       // Subscribe
       const updatedUser = await users.findByIdAndUpdate(userId, {
         $addToSet: { subscribedChannels: channelId }
-      }, { new: true });
+      }, { returnDocument: 'after' });
       await users.findByIdAndUpdate(channelId, {
         $addToSet: { subscribers: userId }
       });

@@ -78,7 +78,7 @@ export const editcomment = async (req, res) => {
     const updated = await comment.findByIdAndUpdate(
       _id,
       { $set: { commentbody: commentbody.trim() } },
-      { new: true }
+      { returnDocument: 'after' }
     );
 
     if (!updated) {
@@ -139,7 +139,7 @@ export const reactToComment = async (req, res) => {
     const updated = await comment.findByIdAndUpdate(
       _id,
       { likes, dislikes, likedBy, dislikedBy },
-      { new: true }
+      { returnDocument: 'after' }
     );
 
     return res.status(200).json(updated);
