@@ -125,27 +125,22 @@ const VideoInfo = ({ video }: any) => {
     return;
   }
 
+  // video.uploader already has the channel owner's _id
+  const channelOwnerId = video?.uploader;
+
+  if (!channelOwnerId) {
+    alert("Channel not found");
+    return;
+  }
+
+  if (channelOwnerId === user._id) {
+    alert("You cannot subscribe to your own channel");
+    return;
+  }
+
   try {
-    // Step 1: Find channel owner using channel name from video
-    const channelName = video?.videochanel;
-    if (!channelName) {
-      alert("Channel not found");
-      return;
-    }
-
-    const channelRes = await axiosInstance.get(
-      `/user/${encodeURIComponent(channelName)}`
-    );
-    const channelOwner = channelRes.data;
-
-    if (!channelOwner?._id) {
-      alert("Channel owner not found");
-      return;
-    }
-
-    // Step 2: Subscribe using their actual MongoDB _id
     const res = await axiosInstance.post(
-      `/user/subscribe/${channelOwner._id}`,
+      `/user/subscribe/${channelOwnerId}`,
       { userId: user._id }
     );
 
@@ -159,11 +154,7 @@ const VideoInfo = ({ video }: any) => {
 
   } catch (err: any) {
     console.error("Subscription Error:", err);
-    const msg = err.response?.data?.message || "Subscription failed";
-    if (msg.includes("re-login")) {
-      localStorage.removeItem("user");
-      window.location.href = "/";
-    }
+    alert(err.response?.data?.message || "Subscription failed");
   }
 };
   const handleDislike = async () => {
