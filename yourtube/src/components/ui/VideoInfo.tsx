@@ -29,7 +29,8 @@ const VideoInfo = ({ video }: any) => {
   const { user, setUser } = useUser();
   const [isWatchLater, setIsWatchLater] = useState(false);
   const [isSubscribed, setIsSubscribed] = useState(false);
-
+  const [likeLoading, setLikeLoading] = useState(false);
+  const [dislikeLoading, setDislikeLoading] = useState(false);
   useEffect(() => {
     if (user && user.subscribedChannels) {
       setIsSubscribed(user.subscribedChannels.includes(video.uploader));
@@ -83,6 +84,8 @@ const VideoInfo = ({ video }: any) => {
 
   const handleLike = async () => {
     if (!user) return;
+    if (likeLoading) return; // prevent double clicks
+    setLikeLoading(true);
     try {
       const res = await axiosInstance.post(`/like/${video._id}`, {
         userId: user?._id,
@@ -102,6 +105,8 @@ const VideoInfo = ({ video }: any) => {
       }
     } catch (error) {
       console.log(error);
+    } finally {
+      setLikeLoading(false);
     }
   };
   const handleWatchLater = async () => {
@@ -120,66 +125,69 @@ const VideoInfo = ({ video }: any) => {
   };
 
   const handleSubscribe = async () => {
-  if (!user) {
-    alert("Please login to subscribe");
-    return;
-  }
-
-  // video.uploader already has the channel owner's _id
-  const channelOwnerId = video?.uploader;
-
-  if (!channelOwnerId) {
-    alert("Channel not found");
-    return;
-  }
-
-  if (channelOwnerId === user._id) {
-    alert("You cannot subscribe to your own channel");
-    return;
-  }
-
-  try {
-    const res = await axiosInstance.post(
-      `/user/subscribe/${channelOwnerId}`,
-      { userId: user._id }
-    );
-
-    if (res.data.subscribed !== undefined) {
-      setIsSubscribed(res.data.subscribed);
-      if (res.data.user) {
-        setUser(res.data.user);
-        localStorage.setItem("user", JSON.stringify(res.data.user));
-      }
+    if (!user) {
+      alert("Please login to subscribe");
+      return;
     }
 
-  } catch (err: any) {
-    console.error("Subscription Error:", err);
-    alert(err.response?.data?.message || "Subscription failed");
-  }
-};
-  const handleDislike = async () => {
-    if (!user) return;
+    // video.uploader already has the channel owner's _id
+    const channelOwnerId = video?.uploader;
+
+    if (!channelOwnerId) {
+      alert("Channel not found");
+      return;
+    }
+
+    if (channelOwnerId === user._id) {
+      alert("You cannot subscribe to your own channel");
+      return;
+    }
+
     try {
-      const res = await axiosInstance.post(`/like/${video._id}`, {
-        userId: user?._id,
-      });
-      if (!res.data.liked) {
-        if (isDisliked) {
-          setDislikes((prev: any) => prev - 1);
-          setIsDisliked(false);
-        } else {
-          setDislikes((prev: any) => prev + 1);
-          setIsDisliked(true);
-          if (isLiked) {
-            setlikes((prev: any) => prev - 1);
-            setIsLiked(false);
-          }
+      const res = await axiosInstance.post(
+        `/user/subscribe/${channelOwnerId}`,
+        { userId: user._id },
+      );
+
+      if (res.data.subscribed !== undefined) {
+        setIsSubscribed(res.data.subscribed);
+        if (res.data.user) {
+          setUser(res.data.user);
+          localStorage.setItem("user", JSON.stringify(res.data.user));
         }
       }
-    } catch (error) {
-      console.log(error);
+    } catch (err: any) {
+      console.error("Subscription Error:", err);
+      alert(err.response?.data?.message || "Subscription failed");
     }
   };
+  const handleDislike = async () => {
+  if (!user) return;
+  if (dislikeLoading) return;
+  setDislikeLoading(true);
+  try {
+    const res = await axiosInstance.post(`/like/dislike/${video._id}`, {
+      userId: user?._id,
+    });
+    if (res.data.disliked) {
+      if (isDisliked) {
+        setDislikes((prev: any) => prev - 1);
+        setIsDisliked(false);
+      } else {
+        setDislikes((prev: any) => prev + 1);
+        setIsDisliked(true);
+        if (isLiked) {
+          setlikes((prev: any) => prev - 1);
+          setIsLiked(false);
+        }
+      }
+    }
+  } catch (error) {
+    console.log(error);
+  } finally {
+    setDislikeLoading(false);
+  }
+};
   return (
     <div className="space-y-4">
       <h1 className="text-xl font-semibold">{video.videotitle}</h1>

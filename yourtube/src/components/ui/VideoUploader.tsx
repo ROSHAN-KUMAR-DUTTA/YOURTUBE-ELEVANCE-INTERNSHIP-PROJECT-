@@ -44,10 +44,9 @@ const VideoUploader = ({ channelId, channelName }: any) => {
     }
   };
   const cancelUpload = () => {
-    if (isUploading) {
-      toast.error("Your video upload has been cancelled");
-    }
-  };
+  toast.info("Upload cancelled");
+  resetForm(); // ✅ actually resets the form
+};
   const handleUpload = async () => {
     if (!videoFile || !videoTitle.trim()) {
       toast.error("Please provide file and title");

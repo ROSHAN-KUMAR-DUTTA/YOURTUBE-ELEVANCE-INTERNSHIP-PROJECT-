@@ -19,6 +19,7 @@ import path from "path";
 import { createServer } from "http";
 import { Server } from "socket.io";
 import { setDefaultResultOrder } from "dns";
+import compression from "compression";
 setDefaultResultOrder("ipv4first");
 
 dotenv.config();
@@ -37,6 +38,7 @@ const io = new Server(httpServer, {
     credentials: true
   }
 });
+app.use(compression());
 
 app.use(cors({
   origin: allowedOrigins,
