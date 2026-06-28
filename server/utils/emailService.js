@@ -7,7 +7,7 @@ const transporter = nodemailer.createTransport({
   port: 587,
   secure: false,
   auth: {
-    user: process.env.NODEMAILER_EMAIL,    // b031ae001@smtp-brevo.com
+    user: process.env.NODEMAILER_EMAIL, // b031ae001@smtp-brevo.com
     pass: process.env.NODEMAILER_PASSWORD, // xsmtpsib-xxx...
   },
 });
@@ -19,12 +19,12 @@ export const sendInvoiceEmail = async (user, invoice) => {
       headers: {
         "api-key": process.env.BREVO_API_KEY,
         "Content-Type": "application/json",
-        "accept": "application/json",
+        accept: "application/json",
       },
       body: JSON.stringify({
         sender: {
           name: "YourTube Premium",
-          email: "b031ae001@smtp-brevo.com", // your Brevo sender
+          email: "rodutta2007@gmail.com", // ← your verified real email
         },
         to: [{ email: user.email, name: user.name || "User" }],
         subject: `Invoice - YourTube ${invoice.planName} Plan`,
@@ -71,12 +71,12 @@ export const sendOtpEmail = async (email, otp) => {
       headers: {
         "api-key": process.env.BREVO_API_KEY,
         "Content-Type": "application/json",
-        "accept": "application/json",
+        accept: "application/json",
       },
       body: JSON.stringify({
         sender: {
           name: "YourTube Auth",
-          email: "b031ae001@smtp-brevo.com",
+          email: "rodutta2007@gmail.com",
         },
         to: [{ email }],
         subject: "Your YourTube Login OTP",
