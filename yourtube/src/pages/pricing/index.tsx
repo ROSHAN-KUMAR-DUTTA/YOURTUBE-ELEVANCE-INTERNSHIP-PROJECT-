@@ -80,6 +80,11 @@ const PricingPage = () => {
 
   const loadRazorpayScript = () => {
     return new Promise((resolve) => {
+      if (window.Razorpay) {
+        resolve(true);
+        return;
+      }
+
       const script = document.createElement("script");
       script.src = "https://checkout.razorpay.com/v1/checkout.js";
       script.onload = () => resolve(true);
@@ -87,16 +92,21 @@ const PricingPage = () => {
       document.body.appendChild(script);
     });
   };
+  useEffect(() => {
+    loadRazorpayScript();
+  }, []);
 
   const handleCheckout = async (planName: string) => {
+    if (loading) return;
     if (!user) {
       alert("Please login first to upgrade.");
       return;
     }
     setLoading(true);
-    const res = await loadRazorpayScript();
-    if (!res) {
-      alert("Razorpay SDK failed to load. Are you online?");
+    const loaded = await loadRazorpayScript();
+
+    if (!loaded) {
+      alert("Failed to load Razorpay");
       setLoading(false);
       return;
     }
@@ -122,18 +132,22 @@ const PricingPage = () => {
         if (verifyRes.data.isPremium) {
           const updatedUser = {
             ...user,
-            isPremium: true,
-            currentPlan: planName,
+            ...verifyRes.data.user,
           };
           setUser(updatedUser);
           localStorage.setItem("user", JSON.stringify(updatedUser));
           alert(`🎉 You are now on ${planName} Plan!`);
-          window.location.href = "/"; // ✅ full reload
+          window.location.replace("/");
         }
         return;
       }
 
       const options = {
+        modal: {
+          ondismiss: function () {
+            setLoading(false);
+          },
+        },
         key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || "dummy",
         amount: order.data.amount,
         currency: order.data.currency,
@@ -142,6 +156,7 @@ const PricingPage = () => {
         order_id: order.data.id,
         // In your Razorpay handler function, REPLACE the success part:
         handler: async function (response: any) {
+          alert("Payment Successful! Verifying...");
           try {
             const verifyRes = await axiosInstance.post(
               "/subscription/payment/verify",
@@ -160,17 +175,18 @@ const PricingPage = () => {
                 ...user,
                 isPremium: true,
                 currentPlan: planName,
-                watchLimit: verifyRes.data.user?.watchLimit || user.watchLimit,
-                subscriptionEndDate: verifyRes.data.user?.subscriptionEndDate,
+                watchLimit: verifyRes.data.watchLimit,
+                subscriptionEndDate: verifyRes.data.subscriptionEndDate,
               };
               setUser(updatedUser);
               localStorage.setItem("user", JSON.stringify(updatedUser));
 
               // ✅ Redirect home with page refresh so plan shows immediately
-              alert(
-                `🎉 You are now on ${planName} Plan! Invoice will be emailed shortly.`,
-              );
-              window.location.href = "/"; // full reload — forces fresh state
+              alert(`🎉 You are now on ${planName} Plan!`);
+
+              setTimeout(() => {
+                window.location.replace("/");
+              }, 100);
             }
           } catch (err) {
             console.error("Verify error:", err);
@@ -185,11 +201,18 @@ const PricingPage = () => {
           color: planName === "Gold" ? "#eab308" : "#000000",
         },
       };
-
+      console.log("Opening Razorpay...");
       const paymentObject = new (window as any).Razorpay(options);
+
+      paymentObject.on("payment.failed", function (response: any) {
+        console.log("Payment Failed:", response.error);
+        alert(response.error.description);
+        setLoading(false);
+      });
+
       paymentObject.open();
     } catch (err) {
-      console.log(err);
+      console.error(err);
       alert("Failed to initiate payment");
     } finally {
       setLoading(false);

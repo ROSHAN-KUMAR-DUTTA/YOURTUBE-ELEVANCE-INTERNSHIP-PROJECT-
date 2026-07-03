@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
-const likeschema = mongoose.Schema(
+
+const likeSchema = new mongoose.Schema(
   {
     viewer: {
       type: mongoose.Schema.Types.ObjectId,
@@ -11,11 +12,18 @@ const likeschema = mongoose.Schema(
       ref: "videofiles",
       required: true,
     },
-    likedon: { type: Date, default: Date.now },
+    type: {
+      type: String,
+      enum: ["like", "dislike"],
+      required: true,
+    },
   },
   {
     timestamps: true,
   }
 );
 
-export default mongoose.model("like", likeschema);
+// One reaction per user per video
+likeSchema.index({ viewer: 1, videoid: 1 }, { unique: true });
+
+export default mongoose.model("like", likeSchema);

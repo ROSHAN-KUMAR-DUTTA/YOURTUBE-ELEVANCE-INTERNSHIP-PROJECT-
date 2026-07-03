@@ -21,14 +21,39 @@ declare global {
 }
 
 const VideoInfo = ({ video }: any) => {
-  const [likes, setlikes] = useState(video.Like || 0);
-  const [dislikes, setDislikes] = useState(video.Dislike || 0);
+  const [likes, setlikes] = useState<number>(video.Like || 0);
+const [dislikes, setDislikes] = useState<number>(video.Dislike || 0);
   const [isLiked, setIsLiked] = useState(false);
   const [isDisliked, setIsDisliked] = useState(false);
   const [showFullDescription, setShowFullDescription] = useState(false);
   const { user, setUser } = useUser();
   const [isWatchLater, setIsWatchLater] = useState(false);
   const [isSubscribed, setIsSubscribed] = useState(false);
+  const [reactionLoading, setReactionLoading] = useState(false);
+
+  useEffect(() => {
+  setlikes(video?.Like ?? 0);
+  setDislikes(video?.Dislike ?? 0);
+
+  const fetchReaction = async () => {
+    if (!user || !video?._id) return;
+
+    try {
+      const res = await axiosInstance.get(
+        `/like/status/${video._id}/${user._id}`
+      );
+
+      setIsLiked(res.data.type === "like");
+      setIsDisliked(res.data.type === "dislike");
+
+    } catch (err) {
+      console.log(err);
+    }
+  };
+
+  fetchReaction();
+
+}, [video, user]);
 
   useEffect(() => {
     if (user && user.subscribedChannels) {
@@ -36,12 +61,7 @@ const VideoInfo = ({ video }: any) => {
     }
   }, [user, video.uploader]);
 
-  useEffect(() => {
-    setlikes(video.Like || 0);
-    setDislikes(video.Dislike || 0);
-    setIsLiked(false);
-    setIsDisliked(false);
-  }, [video]);
+  
 
   useEffect(() => {
     const handleviews = async () => {
@@ -58,7 +78,7 @@ const VideoInfo = ({ video }: any) => {
       }
     };
     handleviews();
-  }, [user]);
+  }, [video?._id]);
 
   const handleDownload = async () => {
     if (!user) {
@@ -81,29 +101,7 @@ const VideoInfo = ({ video }: any) => {
     }
   };
 
-  const handleLike = async () => {
-    if (!user) return;
-    try {
-      const res = await axiosInstance.post(`/like/${video._id}`, {
-        userId: user?._id,
-      });
-      if (res.data.liked) {
-        if (isLiked) {
-          setlikes((prev: any) => prev - 1);
-          setIsLiked(false);
-        } else {
-          setlikes((prev: any) => prev + 1);
-          setIsLiked(true);
-          if (isDisliked) {
-            setDislikes((prev: any) => prev - 1);
-            setIsDisliked(false);
-          }
-        }
-      }
-    } catch (error) {
-      console.log(error);
-    }
-  };
+  
   const handleWatchLater = async () => {
     try {
       const res = await axiosInstance.post(`/watch/${video._id}`, {
@@ -157,29 +155,78 @@ const VideoInfo = ({ video }: any) => {
     alert(err.response?.data?.message || "Subscription failed");
   }
 };
-  const handleDislike = async () => {
-    if (!user) return;
-    try {
-      const res = await axiosInstance.post(`/like/${video._id}`, {
-        userId: user?._id,
-      });
-      if (!res.data.liked) {
-        if (isDisliked) {
-          setDislikes((prev: any) => prev - 1);
-          setIsDisliked(false);
-        } else {
-          setDislikes((prev: any) => prev + 1);
-          setIsDisliked(true);
-          if (isLiked) {
-            setlikes((prev: any) => prev - 1);
-            setIsLiked(false);
-          }
-        }
-      }
-    } catch (error) {
-      console.log(error);
-    }
+  const handleReaction = async (type: "like" | "dislike") => {
+  if (!user) {
+    alert("Please login first.");
+    return;
+}
+
+if (reactionLoading) return;
+
+  setReactionLoading(true);
+
+  // Save previous state for rollback
+  const prevState = {
+    likes,
+    dislikes,
+    isLiked,
+    isDisliked,
   };
+
+  // ---------- Optimistic UI ----------
+  if (type === "like") {
+    if (isLiked) {
+      setIsLiked(false);
+      setlikes((prev) => prev - 1);
+    } else {
+      setIsLiked(true);
+      setlikes((prev) => prev + 1);
+
+      if (isDisliked) {
+        setIsDisliked(false);
+        setDislikes((prev) => prev - 1);
+      }
+    }
+  } else {
+    if (isDisliked) {
+      setIsDisliked(false);
+      setDislikes((prev) => prev - 1);
+    } else {
+      setIsDisliked(true);
+      setDislikes((prev) => prev + 1);
+
+      if (isLiked) {
+        setIsLiked(false);
+        setlikes((prev) => prev - 1);
+      }
+    }
+  }
+
+  try {
+    const res = await axiosInstance.post(`/like/${video._id}`, {
+    userId: user._id,
+    type,
+});
+
+console.log(res.data);
+  } catch (error) {
+    console.error(error);
+
+    // Rollback
+    setlikes(prevState.likes);
+    setDislikes(prevState.dislikes);
+    setIsLiked(prevState.isLiked);
+    setIsDisliked(prevState.isDisliked);
+  } finally {
+    setReactionLoading(false);
+  }
+};
+const handleLike = () => {
+  handleReaction("like");
+};
+const handleDislike = () => {
+  handleReaction("dislike");
+};
   return (
     <div className="space-y-4">
       <h1 className="text-xl font-semibold">{video.videotitle}</h1>
@@ -213,6 +260,7 @@ const VideoInfo = ({ video }: any) => {
               size="sm"
               className="rounded-l-full px-4"
               onClick={handleLike}
+              disabled={reactionLoading}
             >
               <ThumbsUp
                 className={`w-4 h-4 sm:w-5 sm:h-5 mr-2 ${
@@ -227,6 +275,7 @@ const VideoInfo = ({ video }: any) => {
               size="sm"
               className="rounded-r-full px-4"
               onClick={handleDislike}
+              disabled={reactionLoading}
             >
               <ThumbsDown
                 className={`w-4 h-4 sm:w-5 sm:h-5 mr-2 ${
