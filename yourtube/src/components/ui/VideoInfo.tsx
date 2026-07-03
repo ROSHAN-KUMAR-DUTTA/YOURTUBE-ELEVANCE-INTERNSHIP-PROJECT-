@@ -204,9 +204,24 @@ if (reactionLoading) return;
 
   try {
     const res = await axiosInstance.post(`/like/${video._id}`, {
-    userId: user._id,
-    type,
+  userId: user._id,
+  type,
 });
+
+if (res.data.action === "added") {
+  setIsLiked(type === "like");
+  setIsDisliked(type === "dislike");
+}
+
+if (res.data.action === "removed") {
+  setIsLiked(false);
+  setIsDisliked(false);
+}
+
+if (res.data.action === "switched") {
+  setIsLiked(type === "like");
+  setIsDisliked(type === "dislike");
+}
 
 console.log(res.data);
   } catch (error) {
