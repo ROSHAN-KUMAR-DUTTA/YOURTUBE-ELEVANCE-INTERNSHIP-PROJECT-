@@ -83,7 +83,8 @@ export const getUserById = async (req, res) => {
 };
 
 export const manualLogin = async (req, res) => {
-  const { email, password, mobile, state, name, simulatedState } = req.body;
+  const { email, password, mobile, state, name, simulatedState, city } = req.body;
+
   try {
     let user = await users.findOne({ email });
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
@@ -98,10 +99,12 @@ export const manualLogin = async (req, res) => {
         name: name || "New User", 
         mobile, 
         state, 
+        city: city || "",
         otp, 
         otpExpiry, 
         isVerified: false 
       });
+
     } else {
       if (user.password) {
         const isMatch = await bcrypt.compare(password, user.password);
@@ -248,3 +251,27 @@ if (!channel) {
   }
 };
 
+export const updateCity = async (req, res) => {
+  const { id } = req.params;
+  const { city } = req.body;
+
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    return res.status(400).json({ message: "Invalid user ID" });
+  }
+  if (!city || typeof city !== "string" || city.trim().length === 0) {
+    return res.status(400).json({ message: "city is required" });
+  }
+
+  try {
+    const updated = await users.findByIdAndUpdate(
+      id,
+      { $set: { city: city.trim() } },
+      { returnDocument: "after" }
+    );
+    if (!updated) return res.status(404).json({ message: "User not found" });
+    return res.status(200).json({ result: updated });
+  } catch (error) {
+    console.error("updateCity error:", error);
+    return res.status(500).json({ message: "Something went wrong" });
+  }
+};

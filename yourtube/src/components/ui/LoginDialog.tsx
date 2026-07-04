@@ -59,7 +59,9 @@ const LoginDialog = ({
     password: "",
     mobile: "",
     state: "Tamil Nadu",
+    city: "",
   });
+
 
   const [otp, setOtp] = useState("");
   const [userId, setUserId] = useState("");
@@ -101,6 +103,7 @@ const LoginDialog = ({
         password: "",
         mobile: "",
         state: "Tamil Nadu",
+        city: "",
       });
       setOtp("");
     } catch (err: any) {
@@ -199,6 +202,15 @@ const LoginDialog = ({
                         </option>
                       ))}
                     </select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>City</Label>
+                    <Input
+                      required
+                      name="city"
+                      value={formData.city}
+                      onChange={handleChange}
+                    />
                   </div>
                 </>
               )}

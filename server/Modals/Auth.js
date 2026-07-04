@@ -34,7 +34,8 @@ const userschema = mongoose.Schema({
   subscriptionEndDate: { type: Date },
   watchTimeAccumulatedToday: { type: Number, default: 0 },
   lastWatchDate: { type: String, default: "" },
-  invoices: [{ type: mongoose.Schema.Types.ObjectId, ref: "Invoice" }]
+  invoices: [{ type: mongoose.Schema.Types.ObjectId, ref: "Invoice" }],
+  city: { type: String, default: "" }
 });
 
 export default mongoose.model("user", userschema);

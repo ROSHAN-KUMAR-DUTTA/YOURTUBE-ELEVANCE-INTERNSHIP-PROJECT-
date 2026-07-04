@@ -24,9 +24,12 @@ interface Comment {
 }
 
 const Comments = ({ videoId }: any) => {
+  const { user, setUser } = useUser();
+
   const [comments, setComments] = useState<Comment[]>([]);
   const [newComment, setNewComment] = useState("");
-  const [city, setCity] = useState("");
+  // Initialize city immediately from user.city so manual signup users see it on first render
+  const [city, setCity] = useState<string>(() => (user?.city?.trim() ? user.city.trim() : ""));
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
   const [editText, setEditText] = useState("");
@@ -36,8 +39,71 @@ const Comments = ({ videoId }: any) => {
   // prevent multiple likes/dislikes
   const [userActions, setUserActions] = useState<{ [key: string]: string }>({});
 
-  const { user } = useUser();
   const [loading, setLoading] = useState(true);
+
+  // Auto-fill city from DB or (Google users only) browser geolocation
+  useEffect(() => {
+    if (!user) return;
+
+    // FLOW A & B step 1: If DB already has a city, use it immediately.
+    // Manual signup users always reach this branch (city saved at signup).
+    // Google users reach this on subsequent logins after city was saved.
+    if (user.city && user.city.trim() !== "") {
+      setCity(user.city);
+      return;
+    }
+
+    // FLOW B only: Google users have no password stored.
+    // Manual users must never reach the geolocation block — their city
+    // comes from the signup form and should already be in the DB above.
+    const isGoogleUser = !user.password;
+    if (!isGoogleUser) return;
+
+    // Only ask once — stop if previously denied
+    const denied = localStorage.getItem("geo_denied");
+    if (denied === "true") return;
+
+    if (!navigator.geolocation) return;
+
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        const { latitude, longitude } = pos.coords;
+        try {
+          const resp = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${latitude}&lon=${longitude}`,
+            { headers: { "Accept-Language": "en" } }
+          );
+          const geoData = await resp.json();
+          const addr = geoData.address || {};
+          const detectedCity =
+            addr.city || addr.town || addr.village || addr.county || addr.state || "";
+
+          if (detectedCity) {
+            setCity(detectedCity);
+            // Persist to DB — next login skips geolocation entirely
+            try {
+              const res = await axiosInstance.patch(`/user/update-city/${user._id}`, {
+                city: detectedCity,
+              });
+              if (res.data?.result) {
+                setUser(res.data.result);
+                localStorage.setItem("user", JSON.stringify(res.data.result));
+              }
+            } catch (_) {
+              // Non-critical — city is still pre-filled in the UI
+            }
+          }
+        } catch (_) {
+          // Reverse geocoding failed silently
+        }
+      },
+      () => {
+        // Permission denied — flag so we never ask again
+        localStorage.setItem("geo_denied", "true");
+      },
+      { timeout: 8000 }
+    );
+  }, [user]);
 
   useEffect(() => {
     loadComments();
@@ -138,7 +204,7 @@ const Comments = ({ videoId }: any) => {
       }
 
       setNewComment("");
-      setCity("");
+      setCity(user?.city || "");
     } catch (error: any) {
       if (error.response && error.response.status === 400) {
         alert(error.response.data.message);

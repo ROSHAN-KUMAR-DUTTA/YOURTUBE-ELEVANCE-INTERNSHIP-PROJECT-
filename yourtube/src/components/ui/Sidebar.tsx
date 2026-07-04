@@ -10,6 +10,7 @@ import {
   Users,
   X
 } from "lucide-react";
+
 import Link from "next/link";
 import React, { useState, useEffect } from "react";
 import { useUser } from "@/lib/AuthContext";
@@ -93,7 +94,8 @@ const Sidebar = () => {
           <div className="space-y-1">
             <SidebarItem icon={Home} label="Home" href="/" isDesktopExpanded={isDesktopExpanded} isMobile={isMobileOpen} />
             <SidebarItem icon={Compass} label="Explore" href="/explore" isDesktopExpanded={isDesktopExpanded} isMobile={isMobileOpen} />
-            <SidebarItem icon={PlaySquare} label="Subscriptions" href="/subscriptions" isDesktopExpanded={isDesktopExpanded} isMobile={isMobileOpen} />
+            <SidebarItem icon={PlaySquare} label="Subscriptions" href="/pricing" isDesktopExpanded={isDesktopExpanded} isMobile={isMobileOpen} />
+
             <Link href="/friends">
               <Button 
                 variant="ghost" 
