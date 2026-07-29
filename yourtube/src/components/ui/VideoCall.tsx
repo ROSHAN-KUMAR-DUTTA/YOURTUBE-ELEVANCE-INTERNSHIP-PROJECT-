@@ -17,9 +17,29 @@ const stunServers = {
   ],
 };
 
+// Detect mobile browser — used to hide screen-share button
+const getIsMobile = () => {
+  if (typeof window === "undefined") return false;
+  return /Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
+    || (window.innerWidth <= 768);
+};
+
+// Map getUserMedia error names to user-friendly messages
+const mediaErrorMessage = (err: any): string => {
+  const messages: Record<string, string> = {
+    NotAllowedError: "Microphone/camera permission denied. Please allow access in your browser settings.",
+    NotFoundError: "No microphone/camera found. Please connect a device and try again.",
+    NotReadableError: "Microphone/camera is in use by another app. Close other apps and try again.",
+    OverconstrainedError: "Your device does not meet the required media constraints.",
+    AbortError: "Media request was aborted. Please try again.",
+    SecurityError: "Media access blocked by browser security policy.",
+  };
+  return messages[err?.name] || `Media error: ${err?.message || "Unknown error"}`;
+};
+
 export default function VideoCall() {
   const { user } = useUser();
-  const { socket, activeCall, callState, setCallState, remoteSocketId, setActiveCall, setRemoteSocketId } = useSocket();
+  const { socket, activeCall, callState, setCallState, remoteSocketId, setActiveCall, setRemoteSocketId, pendingLocalStream, setPendingLocalStream } = useSocket();
 
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
@@ -30,6 +50,7 @@ export default function VideoCall() {
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
+  const [isMobile] = useState(getIsMobile);
 
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const localVideoRef = useRef<HTMLVideoElement>(null);
@@ -42,11 +63,17 @@ export default function VideoCall() {
 
   // Setup Streams to video elements when they change
   useEffect(() => {
-    if (localVideoRef.current && localStream) localVideoRef.current.srcObject = localStream;
+    if (localVideoRef.current && localStream) {
+      console.log("[VideoCall] Attaching local stream to <video> element");
+      localVideoRef.current.srcObject = localStream;
+    }
   }, [localStream]);
 
   useEffect(() => {
-    if (remoteVideoRef.current && remoteStream) remoteVideoRef.current.srcObject = remoteStream;
+    if (remoteVideoRef.current && remoteStream) {
+      console.log("[VideoCall] Attaching remote stream to <video> element");
+      remoteVideoRef.current.srcObject = remoteStream;
+    }
   }, [remoteStream]);
 
   const processIceQueue = async () => {
@@ -133,15 +160,28 @@ export default function VideoCall() {
   }, [callState, remoteSocketId]);
 
   const initiateCall = async () => {
+    console.log("[Caller] initiateCall() started");
     callStartTimeRef.current = new Date();
-    await setupMediaAndPeerConnection();
+
+    // Use the pre-acquired stream from the click handler (fixes mobile getUserMedia)
+    const preAcquired = pendingLocalStream;
+    if (preAcquired) {
+      console.log("[Caller] Using pre-acquired audio stream from click handler:", preAcquired.id);
+    } else {
+      console.warn("[Caller] No pre-acquired stream — getUserMedia will be called in useEffect context (may fail on mobile)");
+    }
+
+    await setupMediaAndPeerConnection(preAcquired);
+
+    // Clear the pending stream from context now that we've consumed it
+    setPendingLocalStream(null);
     
     try {
-      console.log("[WebRTC] Offer Created");
+      console.log("[Caller] Creating offer...");
       const offer = await pcRef.current!.createOffer();
       await pcRef.current!.setLocalDescription(offer);
       
-      console.log("[WebRTC] Offer Sent");
+      console.log("[Caller] Offer created and set as local description. Sending to remote...");
       socket?.emit("call-user", {
         userToCall: remoteSocketId,
         signalData: offer,
@@ -149,34 +189,39 @@ export default function VideoCall() {
         name: user?.name || user?.channelname || "User",
         profilePic: user?.profilePic,
       });
+      console.log("[Caller] Offer sent to remote via socket");
     } catch (error) {
-      console.error("Error creating/sending offer:", error);
+      console.error("[Caller] Error creating/sending offer:", error);
     }
   };
 
   const acceptCall = async () => {
+    console.log("[Receiver] acceptCall() started — triggered by user tap (direct gesture context)");
     callStartTimeRef.current = new Date();
     setCallState("connected");
     
-    await setupMediaAndPeerConnection();
+    // Receiver path: getUserMedia is called inside setupMediaAndPeerConnection,
+    // which is synchronously called from the Accept button's onClick handler.
+    // This preserves user-gesture context on mobile.
+    await setupMediaAndPeerConnection(null);
     
     try {
-      console.log("[WebRTC] Offer Received (via Modal)");
+      console.log("[Receiver] Setting remote description from incoming offer...");
       await pcRef.current!.setRemoteDescription(new RTCSessionDescription(activeCall!.signal));
-      console.log("[WebRTC] Remote Description Set (Receiver)");
+      console.log("[Receiver] Remote Description Set");
       await processIceQueue();
       
-      console.log("[WebRTC] Answer Created");
+      console.log("[Receiver] Creating answer...");
       const answer = await pcRef.current!.createAnswer();
       await pcRef.current!.setLocalDescription(answer);
       
-      console.log("[WebRTC] Answer Sent");
+      console.log("[Receiver] Answer created and sent");
       socket?.emit("answer-call", {
         to: activeCall!.from,
         signal: answer,
       });
     } catch (error) {
-      console.error("Error accepting call:", error);
+      console.error("[Receiver] Error accepting call:", error);
     }
   };
 
@@ -187,26 +232,46 @@ export default function VideoCall() {
     setRemoteSocketId(null);
   };
 
-  const setupMediaAndPeerConnection = async () => {
+  /**
+   * Sets up media (audio) and the RTCPeerConnection.
+   * 
+   * @param preAcquiredStream - If provided (caller path), reuse this stream instead of
+   *   calling getUserMedia again. This is critical on mobile: the stream was acquired inside
+   *   the button click handler where user-gesture context is active.
+   *   If null (receiver path or fallback), getUserMedia is called here — which works for
+   *   the receiver because acceptCall() is called directly from a click handler.
+   */
+  const setupMediaAndPeerConnection = async (preAcquiredStream: MediaStream | null) => {
     let audioTrack: MediaStreamTrack | null = null;
     let audioStream: MediaStream | null = null;
     
-    try {
-      // 1. Attempt to Get Audio
-      audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    if (preAcquiredStream && preAcquiredStream.getAudioTracks().length > 0) {
+      // ✅ Reuse the stream acquired inside the click handler (caller path)
+      console.log("[Setup] Reusing pre-acquired audio stream");
+      audioStream = preAcquiredStream;
       audioTrack = audioStream.getAudioTracks()[0];
       audioTrack.enabled = false; // Muted by default
-    } catch (error) {
-      console.error("Error accessing microphone. Falling back to dummy audio track.", error);
-      toast.warning("Microphone not detected. Call will proceed without audio.");
-      // Create Dummy Audio Track
-      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
-      const oscillator = ctx.createOscillator();
-      const dst = ctx.createMediaStreamDestination();
-      oscillator.connect(dst);
-      oscillator.start();
-      audioTrack = dst.stream.getAudioTracks()[0];
-      audioTrack.enabled = false;
+    } else {
+      // Receiver path or fallback: acquire audio here
+      try {
+        console.log("[Setup] Requesting audio via getUserMedia...");
+        audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        audioTrack = audioStream.getAudioTracks()[0];
+        audioTrack.enabled = false; // Muted by default
+        console.log("[Setup] Audio acquired successfully:", audioStream.id);
+      } catch (error: any) {
+        console.error(`[Setup] getUserMedia failed: ${error.name} — ${error.message}`, error);
+        toast.warning(mediaErrorMessage(error));
+        // Create Dummy Audio Track so the call can still proceed (video-only or silent)
+        const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+        const oscillator = ctx.createOscillator();
+        const dst = ctx.createMediaStreamDestination();
+        oscillator.connect(dst);
+        oscillator.start();
+        audioTrack = dst.stream.getAudioTracks()[0];
+        audioTrack.enabled = false;
+        console.log("[Setup] Fell back to dummy audio track");
+      }
     }
 
     // Safety check: if the call was ended while we were waiting for user permission, abort and clean up!
@@ -217,6 +282,7 @@ export default function VideoCall() {
 
     try {
       // 2. Create Dummy Video Track
+      console.log("[Setup] Creating dummy video track (canvas)...");
       const canvas = document.createElement("canvas");
       canvas.width = 1;
       canvas.height = 1;
@@ -229,17 +295,21 @@ export default function VideoCall() {
       const dummyVideoTrack = dummyStream.getVideoTracks()[0];
 
       // 3. Initialize RTCPeerConnection
+      console.log("[Setup] Creating RTCPeerConnection...");
       pcRef.current = new RTCPeerConnection(stunServers);
       pendingCandidatesRef.current = []; // Reset queue for new connection
 
       // Add tracks to peer connection
       const combinedStream = new MediaStream([audioTrack, dummyVideoTrack]);
       combinedStream.getTracks().forEach((track) => pcRef.current!.addTrack(track, combinedStream));
+      console.log("[Setup] Tracks added to peer connection:", combinedStream.getTracks().map(t => `${t.kind}:${t.id}`));
 
       // 4. Set local stream (only audio initially)
       setLocalStream(new MediaStream([audioTrack]));
+      console.log("[Setup] Local stream set (audio only)");
 
       pcRef.current.ontrack = (event) => {
+        console.log("[WebRTC] Remote track received:", event.track.kind);
         setRemoteStream(event.streams[0]);
       };
 
@@ -252,8 +322,18 @@ export default function VideoCall() {
           });
         }
       };
+
+      pcRef.current.oniceconnectionstatechange = () => {
+        console.log("[WebRTC] ICE Connection State:", pcRef.current?.iceConnectionState);
+      };
+
+      pcRef.current.onconnectionstatechange = () => {
+        console.log("[WebRTC] Connection State:", pcRef.current?.connectionState);
+      };
+
+      console.log("[Setup] PeerConnection setup complete");
     } catch (error) {
-      console.error("Critical error setting up PeerConnection.", error);
+      console.error("[Setup] Critical error setting up PeerConnection.", error);
       // Clean up the audio track if we fail here
       if (audioStream) {
         audioStream.getTracks().forEach(track => track.stop());
@@ -300,6 +380,12 @@ export default function VideoCall() {
       });
       pcRef.current.close();
       pcRef.current = null;
+    }
+
+    // Clean up any pending stream that wasn't consumed
+    if (pendingLocalStream) {
+      pendingLocalStream.getTracks().forEach(track => track.stop());
+      setPendingLocalStream(null);
     }
 
     // Save call history
@@ -353,8 +439,10 @@ export default function VideoCall() {
     } else {
       try {
         // Re-request camera hardware
+        console.log("[Video] Requesting camera via getUserMedia...");
         const newStream = await navigator.mediaDevices.getUserMedia({ video: true });
         const newVideoTrack = newStream.getVideoTracks()[0];
+        console.log("[Video] Camera acquired:", newVideoTrack.id);
         
         // If the call was ended while waiting for permission, abort immediately
         if (!pcRef.current) {
@@ -379,14 +467,21 @@ export default function VideoCall() {
         }
         setIsVideoOn(true);
         socket?.emit("video-toggled", { to: remoteSocketId, isVideoOn: true });
-      } catch (err) {
-        console.error("Could not restart video", err);
+      } catch (err: any) {
+        console.error(`[Video] getUserMedia failed: ${err.name} — ${err.message}`, err);
+        toast.error(mediaErrorMessage(err));
       }
     }
   };
 
   const toggleScreenShare = async () => {
     if (!isScreenSharing) {
+      // Guard: getDisplayMedia is not available on mobile browsers
+      if (!navigator.mediaDevices?.getDisplayMedia) {
+        toast.error("Screen sharing is only available on desktop browsers.");
+        return;
+      }
+
       try {
         const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
         const screenTrack = screenStream.getVideoTracks()[0];
@@ -418,8 +513,14 @@ export default function VideoCall() {
           localVideoRef.current.srcObject = new MediaStream(tracks);
         }
         setIsScreenSharing(true);
-      } catch (err) {
-        console.error("Error sharing screen", err);
+      } catch (err: any) {
+        // User cancelled the screen share picker — not an error
+        if (err.name === "NotAllowedError") {
+          console.log("[ScreenShare] User cancelled screen share picker");
+        } else {
+          console.error("[ScreenShare] Error sharing screen:", err);
+          toast.error("Failed to start screen sharing.");
+        }
       }
     } else {
       stopScreenShare();
@@ -580,15 +681,18 @@ export default function VideoCall() {
               {isVideoOn ? <Video className="w-4 h-4 sm:w-5 sm:h-5" /> : <VideoOff className="w-4 h-4 sm:w-5 sm:h-5" />}
             </Button>
 
-            <Button
-              variant={isScreenSharing ? "default" : "outline"}
-              size="icon"
-              className={`rounded-full w-9 h-9 sm:w-10 sm:h-10 ${isScreenSharing ? "bg-blue-600 text-white hover:bg-blue-700" : ""}`}
-              onClick={toggleScreenShare}
-              title="Share Screen"
-            >
-              <MonitorUp className="w-4 h-4 sm:w-5 sm:h-5" />
-            </Button>
+            {/* Screen share: hidden on mobile since getDisplayMedia is unsupported */}
+            {!isMobile && (
+              <Button
+                variant={isScreenSharing ? "default" : "outline"}
+                size="icon"
+                className={`rounded-full w-9 h-9 sm:w-10 sm:h-10 ${isScreenSharing ? "bg-blue-600 text-white hover:bg-blue-700" : ""}`}
+                onClick={toggleScreenShare}
+                title="Share Screen"
+              >
+                <MonitorUp className="w-4 h-4 sm:w-5 sm:h-5" />
+              </Button>
+            )}
 
             <Button
               variant={isRecording ? "destructive" : "outline"}

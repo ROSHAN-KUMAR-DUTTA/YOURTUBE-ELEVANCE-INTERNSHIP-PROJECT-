@@ -5,12 +5,13 @@ import { useSocket } from "@/lib/SocketContext";
 import { PhoneCall, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { toast } from "sonner";
 
 const BACKEND_URL = process.env.BACKEND_URL || "";
 
 export default function FriendsList() {
   const { user } = useUser();
-  const { setCallState, setRemoteSocketId, setActiveCall } = useSocket();
+  const { setCallState, setRemoteSocketId, setActiveCall, setPendingLocalStream } = useSocket();
   const [users, setUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -31,7 +32,29 @@ export default function FriendsList() {
     }
   }, [user]);
 
-  const initiateCall = (friend: any) => {
+  const initiateCall = async (friend: any) => {
+    // CRITICAL: getUserMedia MUST be called directly inside a user-gesture handler.
+    // Mobile browsers (Safari/Chrome) silently reject getUserMedia when called from
+    // a useEffect or after async work that breaks the user-gesture call chain.
+    // We acquire the audio stream HERE (in the click handler) and pass it via context.
+    let preAcquiredStream: MediaStream | null = null;
+    try {
+      console.log("[Caller] Acquiring audio inside click handler (user-gesture context)");
+      preAcquiredStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      console.log("[Caller] Audio stream acquired:", preAcquiredStream.id);
+    } catch (err: any) {
+      console.error("[Caller] getUserMedia failed in click handler:", err.name, err.message);
+      const messages: Record<string, string> = {
+        NotAllowedError: "Microphone permission denied. Please allow microphone access and try again.",
+        NotFoundError: "No microphone found. Please connect a microphone and try again.",
+        NotReadableError: "Microphone is in use by another app. Please close other apps and try again.",
+        OverconstrainedError: "Microphone does not meet the required constraints.",
+      };
+      toast.error(messages[err.name] || `Microphone error: ${err.message}`);
+      // Don't block the call — VideoCall.tsx will fall back to a dummy audio track
+    }
+
+    setPendingLocalStream(preAcquiredStream);
     setRemoteSocketId(friend._id);
     setActiveCall({ from: user?._id, name: friend.name || friend.channelname, signal: null });
     setCallState("calling");

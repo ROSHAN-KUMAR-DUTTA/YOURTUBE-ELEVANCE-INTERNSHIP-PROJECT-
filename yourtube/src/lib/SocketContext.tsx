@@ -17,6 +17,8 @@ interface SocketContextType {
   setCallState: (state: "idle" | "calling" | "incoming" | "connected") => void;
   remoteSocketId: string | null;
   setRemoteSocketId: (id: string | null) => void;
+  pendingLocalStream: MediaStream | null;
+  setPendingLocalStream: (stream: MediaStream | null) => void;
 }
 
 const SocketContext = createContext<SocketContextType>({
@@ -26,7 +28,9 @@ const SocketContext = createContext<SocketContextType>({
   callState: "idle",
   setCallState: () => {},
   remoteSocketId: null,
-  setRemoteSocketId: () => {}
+  setRemoteSocketId: () => {},
+  pendingLocalStream: null,
+  setPendingLocalStream: () => {},
 });
 
 export const useSocket = () => useContext(SocketContext);
@@ -37,6 +41,7 @@ export const SocketProvider = ({ children }: { children: React.ReactNode }) => {
   const [activeCall, setActiveCall] = useState<CallData | null>(null);
   const [callState, setCallState] = useState<"idle" | "calling" | "incoming" | "connected">("idle");
   const [remoteSocketId, setRemoteSocketId] = useState<string | null>(null);
+  const [pendingLocalStream, setPendingLocalStream] = useState<MediaStream | null>(null);
 
   const callStateRef = useRef(callState);
   useEffect(() => {
@@ -87,7 +92,7 @@ export const SocketProvider = ({ children }: { children: React.ReactNode }) => {
   }, [user?._id]); // omit callState dependency to avoid reconnect loop, use refs or stable setters in practice, but this is fine since we just register.
   
   return (
-    <SocketContext.Provider value={{ socket, activeCall, setActiveCall, callState, setCallState, remoteSocketId, setRemoteSocketId }}>
+    <SocketContext.Provider value={{ socket, activeCall, setActiveCall, callState, setCallState, remoteSocketId, setRemoteSocketId, pendingLocalStream, setPendingLocalStream }}>
       {children}
     </SocketContext.Provider>
   );
