@@ -122,6 +122,22 @@ io.on("connection", (socket) => {
     }
   });
 
+  socket.on("renegotiation-offer", (data) => {
+    const { to, signal } = data;
+    const targetSocketId = activeUsers.get(to);
+    if (targetSocketId) {
+      io.to(targetSocketId).emit("renegotiation-offer", signal);
+    }
+  });
+
+  socket.on("renegotiation-answer", (data) => {
+    const { to, signal } = data;
+    const targetSocketId = activeUsers.get(to);
+    if (targetSocketId) {
+      io.to(targetSocketId).emit("renegotiation-answer", signal);
+    }
+  });
+
   socket.on("disconnect", () => {
     for (const [userId, socketId] of activeUsers.entries()) {
       if (socketId === socket.id) {

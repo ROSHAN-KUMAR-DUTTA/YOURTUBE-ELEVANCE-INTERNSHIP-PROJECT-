@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, useCallback } from "react";
 import { useSocket } from "@/lib/SocketContext";
 import { useUser } from "@/lib/AuthContext";
 import { PhoneOff, Mic, MicOff, Video, VideoOff, MonitorUp, Circle, Square, Maximize2, Minimize2, User as UserIcon } from "lucide-react";
@@ -17,11 +17,19 @@ const stunServers = {
   ],
 };
 
-// Detect mobile browser — used to hide screen-share button
+// Detect mobile browser — used to adapt constraints
 const getIsMobile = () => {
   if (typeof window === "undefined") return false;
   return /Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
     || (window.innerWidth <= 768);
+};
+
+// Check if screen sharing via getDisplayMedia is fully supported on the current platform
+const isScreenShareSupported = (): boolean => {
+  if (typeof window === "undefined") return false;
+  const hasDisplayMedia = !!(navigator.mediaDevices && typeof navigator.mediaDevices.getDisplayMedia === "function");
+  const isMobileUA = /Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+  return hasDisplayMedia && !isMobileUA;
 };
 
 // Map getUserMedia error names to user-friendly messages
@@ -35,6 +43,57 @@ const mediaErrorMessage = (err: any): string => {
     SecurityError: "Media access blocked by browser security policy.",
   };
   return messages[err?.name] || `Media error: ${err?.message || "Unknown error"}`;
+};
+
+/**
+ * Attach track lifecycle listeners for debugging on mobile.
+ * Logs 'ended', 'mute', and 'unmute' events so we can spot silent failures in mobile console.
+ */
+const attachTrackListeners = (track: MediaStreamTrack, label: string) => {
+  track.addEventListener("ended", () => {
+    console.warn(`[Track:${label}] ${track.kind} track ENDED (id=${track.id}, readyState=${track.readyState})`);
+  });
+  track.addEventListener("mute", () => {
+    console.warn(`[Track:${label}] ${track.kind} track MUTED (id=${track.id}, enabled=${track.enabled})`);
+  });
+  track.addEventListener("unmute", () => {
+    console.log(`[Track:${label}] ${track.kind} track UNMUTED (id=${track.id}, enabled=${track.enabled})`);
+  });
+  console.log(`[Track:${label}] Listeners attached — kind=${track.kind}, id=${track.id}, enabled=${track.enabled}, readyState=${track.readyState}`);
+};
+
+/**
+ * Get camera stream with mobile-friendly constraints.
+ * Uses ideal (not exact) width/height so mobile cameras can satisfy them.
+ * Falls back to bare { video: true } if constrained request fails (OverconstrainedError).
+ */
+const getVideoStream = async (): Promise<MediaStream> => {
+  // First attempt: ideal constraints with front camera preference
+  try {
+    console.log("[getUserMedia] Attempting video with ideal constraints (facingMode: user)...");
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: {
+        facingMode: { ideal: "user" },
+        width: { ideal: 640 },
+        height: { ideal: 480 },
+        frameRate: { ideal: 30 },
+      },
+    });
+    console.log("[getUserMedia] Video acquired with ideal constraints:", stream.getVideoTracks()[0]?.getSettings());
+    return stream;
+  } catch (err: any) {
+    console.warn(`[getUserMedia] Ideal constraints failed (${err.name}), trying bare { video: true }...`);
+  }
+
+  // Second attempt: bare video — no constraints at all
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+    console.log("[getUserMedia] Video acquired with bare constraints:", stream.getVideoTracks()[0]?.getSettings());
+    return stream;
+  } catch (err: any) {
+    console.error(`[getUserMedia] Bare video also failed: ${err.name} — ${err.message}`);
+    throw err; // Caller handles the toast
+  }
 };
 
 export default function VideoCall() {
@@ -56,23 +115,36 @@ export default function VideoCall() {
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
   const pendingCandidatesRef = useRef<RTCIceCandidateInit[]>([]);
+  // Ref to always have the latest localStream without stale closures
+  const localStreamRef = useRef<MediaStream | null>(null);
   
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordedChunksRef = useRef<Blob[]>([]);
   const callStartTimeRef = useRef<Date | null>(null);
 
-  // Setup Streams to video elements when they change
+  // Keep ref in sync with state so callbacks/closures always have latest
+  useEffect(() => {
+    localStreamRef.current = localStream;
+  }, [localStream]);
+
+  // Setup Streams to video elements when they change — with iOS .play() nudge
   useEffect(() => {
     if (localVideoRef.current && localStream) {
-      console.log("[VideoCall] Attaching local stream to <video> element");
+      console.log("[VideoCall] Attaching local stream to <video> element, tracks:", localStream.getTracks().map(t => `${t.kind}:${t.enabled}:${t.readyState}`));
       localVideoRef.current.srcObject = localStream;
+      // iOS Safari sometimes needs an explicit play() after setting srcObject
+      localVideoRef.current.play().catch(() => { /* autoplay blocked is fine for muted local */ });
     }
   }, [localStream]);
 
   useEffect(() => {
     if (remoteVideoRef.current && remoteStream) {
-      console.log("[VideoCall] Attaching remote stream to <video> element");
+      console.log("[VideoCall] Attaching remote stream to <video> element, tracks:", remoteStream.getTracks().map(t => `${t.kind}:${t.enabled}:${t.readyState}`));
       remoteVideoRef.current.srcObject = remoteStream;
+      // iOS Safari sometimes needs an explicit play() after setting srcObject
+      remoteVideoRef.current.play().catch((e) => {
+        console.warn("[VideoCall] Remote video .play() failed:", e.name);
+      });
     }
   }, [remoteStream]);
 
@@ -135,10 +207,43 @@ export default function VideoCall() {
       setIsRemoteVideoOn(isRemoteOn);
     };
 
+    // Handle renegotiation from the remote peer (needed when they toggle video on)
+    const handleRenegotiationOffer = async (signal: RTCSessionDescriptionInit) => {
+      console.log("[WebRTC] Renegotiation offer received");
+      if (pcRef.current && pcRef.current.signalingState !== "closed") {
+        try {
+          await pcRef.current.setRemoteDescription(new RTCSessionDescription(signal));
+          const answer = await pcRef.current.createAnswer();
+          await pcRef.current.setLocalDescription(answer);
+          socket.emit("renegotiation-answer", {
+            to: remoteSocketId,
+            signal: answer,
+          });
+          console.log("[WebRTC] Renegotiation answer sent");
+        } catch (err) {
+          console.error("[WebRTC] Error handling renegotiation offer:", err);
+        }
+      }
+    };
+
+    const handleRenegotiationAnswer = async (signal: RTCSessionDescriptionInit) => {
+      console.log("[WebRTC] Renegotiation answer received");
+      if (pcRef.current && pcRef.current.signalingState !== "closed") {
+        try {
+          await pcRef.current.setRemoteDescription(new RTCSessionDescription(signal));
+          console.log("[WebRTC] Renegotiation answer applied");
+        } catch (err) {
+          console.error("[WebRTC] Error applying renegotiation answer:", err);
+        }
+      }
+    };
+
     socket.on("call-answered", handleCallAnswered);
     socket.on("ice-candidate", handleIceCandidate);
     socket.on("call-rejected", handleCallRejected);
     socket.on("video-toggled", handleVideoToggled);
+    socket.on("renegotiation-offer", handleRenegotiationOffer);
+    socket.on("renegotiation-answer", handleRenegotiationAnswer);
     // call-ended is handled in SocketContext which resets state, but we need to cleanup media
     socket.on("call-ended", () => endCall(false));
 
@@ -147,6 +252,8 @@ export default function VideoCall() {
       socket.off("ice-candidate", handleIceCandidate);
       socket.off("call-rejected", handleCallRejected);
       socket.off("video-toggled", handleVideoToggled);
+      socket.off("renegotiation-offer", handleRenegotiationOffer);
+      socket.off("renegotiation-answer", handleRenegotiationAnswer);
       socket.off("call-ended");
     };
   }, [socket, callState]);
@@ -250,67 +357,84 @@ export default function VideoCall() {
       console.log("[Setup] Reusing pre-acquired audio stream");
       audioStream = preAcquiredStream;
       audioTrack = audioStream.getAudioTracks()[0];
-      audioTrack.enabled = false; // Muted by default
+      audioTrack.enabled = false; // Muted by default — user toggles mic on explicitly
+      attachTrackListeners(audioTrack, "local-audio-preacquired");
     } else {
       // Receiver path or fallback: acquire audio here
       try {
-        console.log("[Setup] Requesting audio via getUserMedia...");
+        console.log("[Setup] Requesting audio via getUserMedia({audio: true})...");
         audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
         audioTrack = audioStream.getAudioTracks()[0];
-        audioTrack.enabled = false; // Muted by default
-        console.log("[Setup] Audio acquired successfully:", audioStream.id);
+        audioTrack.enabled = false; // Muted by default — user toggles mic on explicitly
+        console.log("[Setup] Audio acquired — id:", audioTrack.id, "enabled:", audioTrack.enabled, "readyState:", audioTrack.readyState);
+        attachTrackListeners(audioTrack, "local-audio");
       } catch (error: any) {
-        console.error(`[Setup] getUserMedia failed: ${error.name} — ${error.message}`, error);
+        console.error(`[Setup] getUserMedia audio failed: ${error.name} — ${error.message}`, error);
         toast.warning(mediaErrorMessage(error));
         // Create Dummy Audio Track so the call can still proceed (video-only or silent)
-        const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
-        const oscillator = ctx.createOscillator();
-        const dst = ctx.createMediaStreamDestination();
-        oscillator.connect(dst);
-        oscillator.start();
-        audioTrack = dst.stream.getAudioTracks()[0];
-        audioTrack.enabled = false;
-        console.log("[Setup] Fell back to dummy audio track");
+        try {
+          const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+          const oscillator = ctx.createOscillator();
+          const dst = ctx.createMediaStreamDestination();
+          oscillator.connect(dst);
+          oscillator.start();
+          audioTrack = dst.stream.getAudioTracks()[0];
+          audioTrack.enabled = false;
+          attachTrackListeners(audioTrack, "local-audio-dummy");
+          console.log("[Setup] Fell back to dummy audio track");
+        } catch (dummyErr) {
+          console.error("[Setup] Even dummy audio creation failed:", dummyErr);
+          // Last resort: proceed without audio
+          audioTrack = null;
+        }
       }
     }
 
-    // Safety check: if the call was ended while we were waiting for user permission, abort and clean up!
-    // Since we can't reliably read the latest callState without a ref, we check if pcRef was explicitly nulled by endCall
-    // Wait, pcRef.current is initially null, so we can't just check that. 
-    // Instead, we can check if we still intend to be in a call by checking a local variable or ref.
-    // However, if the user ended the call, we can at least ensure we don't leak this stream if we abort later.
-
     try {
-      // 2. Create Dummy Video Track
+      // Create Dummy Video Track (placeholder until user toggles camera on)
       console.log("[Setup] Creating dummy video track (canvas)...");
       const canvas = document.createElement("canvas");
       canvas.width = 1;
       canvas.height = 1;
-      const ctx = canvas.getContext("2d");
-      if (ctx) {
-        ctx.fillStyle = "black";
-        ctx.fillRect(0, 0, 1, 1);
+      const canvasCtx = canvas.getContext("2d");
+      if (canvasCtx) {
+        canvasCtx.fillStyle = "black";
+        canvasCtx.fillRect(0, 0, 1, 1);
       }
       const dummyStream = canvas.captureStream(1);
       const dummyVideoTrack = dummyStream.getVideoTracks()[0];
+      attachTrackListeners(dummyVideoTrack, "local-video-dummy");
 
-      // 3. Initialize RTCPeerConnection
+      // Initialize RTCPeerConnection
       console.log("[Setup] Creating RTCPeerConnection...");
       pcRef.current = new RTCPeerConnection(stunServers);
       pendingCandidatesRef.current = []; // Reset queue for new connection
 
-      // Add tracks to peer connection
-      const combinedStream = new MediaStream([audioTrack, dummyVideoTrack]);
-      combinedStream.getTracks().forEach((track) => pcRef.current!.addTrack(track, combinedStream));
-      console.log("[Setup] Tracks added to peer connection:", combinedStream.getTracks().map(t => `${t.kind}:${t.id}`));
+      // Build the combined stream and add tracks to peer connection
+      // IMPORTANT: tracks must be added BEFORE createOffer/createAnswer (mobile browsers are strict)
+      const tracksToAdd: MediaStreamTrack[] = [];
+      if (audioTrack) tracksToAdd.push(audioTrack);
+      tracksToAdd.push(dummyVideoTrack);
 
-      // 4. Set local stream (only audio initially)
-      setLocalStream(new MediaStream([audioTrack]));
-      console.log("[Setup] Local stream set (audio only)");
+      const combinedStream = new MediaStream(tracksToAdd);
+      tracksToAdd.forEach((track) => {
+        pcRef.current!.addTrack(track, combinedStream);
+        console.log(`[Setup] addTrack: ${track.kind} (id=${track.id}, enabled=${track.enabled})`);
+      });
+
+      // Set local stream — include audio track so toggleMic works on it
+      const localStreamTracks: MediaStreamTrack[] = [];
+      if (audioTrack) localStreamTracks.push(audioTrack);
+      setLocalStream(new MediaStream(localStreamTracks));
+      console.log("[Setup] Local stream set (audio only), tracks:", localStreamTracks.length);
 
       pcRef.current.ontrack = (event) => {
-        console.log("[WebRTC] Remote track received:", event.track.kind);
+        const track = event.track;
+        console.log(`[WebRTC] Remote track received: ${track.kind}, id=${track.id}, enabled=${track.enabled}, readyState=${track.readyState}`);
+        attachTrackListeners(track, "remote-" + track.kind);
         setRemoteStream(event.streams[0]);
+        // Log all remote stream tracks for debugging
+        console.log("[WebRTC] Remote stream tracks:", event.streams[0]?.getTracks().map(t => `${t.kind}:${t.id}:${t.enabled}:${t.readyState}`));
       };
 
       pcRef.current.onicecandidate = (event) => {
@@ -329,6 +453,27 @@ export default function VideoCall() {
 
       pcRef.current.onconnectionstatechange = () => {
         console.log("[WebRTC] Connection State:", pcRef.current?.connectionState);
+      };
+
+      // onnegotiationneeded: fires when addTrack/replaceTrack changes require renegotiation
+      // This is critical for mobile — when camera is toggled on, replaceTrack may not trigger
+      // renegotiation automatically on all browsers, but addTrack will.
+      pcRef.current.onnegotiationneeded = async () => {
+        console.log("[WebRTC] Negotiation needed event fired (signalingState:", pcRef.current?.signalingState, ")");
+        // Only the initiator should create a new offer to avoid glare
+        if (pcRef.current && pcRef.current.signalingState === "stable") {
+          try {
+            const offer = await pcRef.current.createOffer();
+            await pcRef.current.setLocalDescription(offer);
+            socket?.emit("renegotiation-offer", {
+              to: remoteSocketId,
+              signal: offer,
+            });
+            console.log("[WebRTC] Renegotiation offer sent");
+          } catch (err) {
+            console.error("[WebRTC] Error during renegotiation:", err);
+          }
+        }
       };
 
       console.log("[Setup] PeerConnection setup complete");
@@ -415,54 +560,84 @@ export default function VideoCall() {
   };
 
   const toggleMic = () => {
-    if (localStream) {
+    // Use ref for latest stream to avoid stale closures
+    const stream = localStreamRef.current;
+    if (stream) {
+      const audioTracks = stream.getAudioTracks();
+      if (audioTracks.length === 0) {
+        console.warn("[Mic] No audio tracks in local stream — mic toggle has no effect");
+        toast.error("No microphone available to toggle.");
+        return;
+      }
       const newMicState = !isMicOn;
-      // Standard WebRTC mute: disable tracks so they send silence
-      localStream.getAudioTracks().forEach((track) => {
+      audioTracks.forEach((track) => {
         track.enabled = newMicState;
+        console.log(`[Mic] Audio track ${track.id} enabled = ${newMicState}, readyState = ${track.readyState}`);
+      });
+      // Also ensure the sender track matches (same object, but log for debugging)
+      pcRef.current?.getSenders().forEach((sender) => {
+        if (sender.track?.kind === "audio") {
+          console.log(`[Mic] Sender audio track enabled = ${sender.track.enabled}, readyState = ${sender.track.readyState}`);
+        }
       });
       setIsMicOn(newMicState);
+    } else {
+      console.warn("[Mic] toggleMic called but localStream is null");
     }
   };
 
   const toggleVideo = async () => {
     if (isVideoOn) {
-      if (localStream) {
-        // Completely stop the hardware tracks to kill the camera light
-        localStream.getVideoTracks().forEach((track) => {
+      // Turn camera OFF
+      const stream = localStreamRef.current;
+      if (stream) {
+        stream.getVideoTracks().forEach((track) => {
+          console.log(`[Video] Stopping video track ${track.id}`);
           track.stop();
-          localStream.removeTrack(track);
+          stream.removeTrack(track);
         });
       }
       setIsVideoOn(false);
       socket?.emit("video-toggled", { to: remoteSocketId, isVideoOn: false });
     } else {
+      // Turn camera ON
       try {
-        // Re-request camera hardware
-        console.log("[Video] Requesting camera via getUserMedia...");
-        const newStream = await navigator.mediaDevices.getUserMedia({ video: true });
+        console.log("[Video] Requesting camera via getUserMedia with mobile-friendly constraints...");
+        const newStream = await getVideoStream();
         const newVideoTrack = newStream.getVideoTracks()[0];
-        console.log("[Video] Camera acquired:", newVideoTrack.id);
+        console.log("[Video] Camera acquired:", newVideoTrack.id, "settings:", newVideoTrack.getSettings());
+        attachTrackListeners(newVideoTrack, "local-video-camera");
         
         // If the call was ended while waiting for permission, abort immediately
         if (!pcRef.current) {
+          console.warn("[Video] PeerConnection gone — stopping acquired track");
           newVideoTrack.stop();
           return;
         }
         
-        if (localStream) {
-          localStream.addTrack(newVideoTrack);
+        const stream = localStreamRef.current;
+        if (stream) {
+          stream.addTrack(newVideoTrack);
         }
         
-        // If not screen sharing, replace the track being sent to the peer
+        // Replace the dummy/previous video track being sent to the peer
         if (!isScreenSharing) {
           const sender = pcRef.current?.getSenders().find(s => s.track?.kind === "video" || s.track === null);
           if (sender) {
-            sender.replaceTrack(newVideoTrack);
+            console.log("[Video] Replacing sender video track:", sender.track?.id, "→", newVideoTrack.id);
+            await sender.replaceTrack(newVideoTrack);
+            console.log("[Video] replaceTrack completed successfully");
+          } else {
+            console.warn("[Video] No video sender found — adding track directly (will trigger renegotiation)");
+            pcRef.current.addTrack(newVideoTrack, stream || new MediaStream([newVideoTrack]));
           }
-          // Force video element to refresh
+
+          // Force video element to refresh — directly set srcObject for reliability on mobile
           if (localVideoRef.current) {
-            localVideoRef.current.srcObject = new MediaStream([newVideoTrack, ...localStream?.getAudioTracks() || []]);
+            const displayStream = new MediaStream([newVideoTrack, ...(stream?.getAudioTracks() || [])]);
+            localVideoRef.current.srcObject = displayStream;
+            localVideoRef.current.play().catch(() => { /* autoplay blocked is fine for muted local */ });
+            console.log("[Video] Local <video> srcObject updated with camera track");
           }
         }
         setIsVideoOn(true);
@@ -476,9 +651,9 @@ export default function VideoCall() {
 
   const toggleScreenShare = async () => {
     if (!isScreenSharing) {
-      // Guard: getDisplayMedia is not available on mobile browsers
-      if (!navigator.mediaDevices?.getDisplayMedia) {
-        toast.error("Screen sharing is only available on desktop browsers.");
+      // Platform capability guard for mobile / unsupported browsers
+      if (!isScreenShareSupported()) {
+        toast.info("Screen sharing is available on desktop browsers only");
         return;
       }
 
@@ -506,9 +681,10 @@ export default function VideoCall() {
         // Update local video to show screen
         if (localVideoRef.current) {
           // Keep local audio track if it exists so recording still captures it
+          const stream = localStreamRef.current;
           const tracks = [screenTrack];
-          if (localStream) {
-            tracks.push(...localStream.getAudioTracks());
+          if (stream) {
+            tracks.push(...stream.getAudioTracks());
           }
           localVideoRef.current.srcObject = new MediaStream(tracks);
         }
@@ -528,13 +704,14 @@ export default function VideoCall() {
   };
 
   const stopScreenShare = () => {
-    if (localStream) {
-      const videoTrack = localStream.getVideoTracks()[0] || null;
+    const stream = localStreamRef.current;
+    if (stream) {
+      const videoTrack = stream.getVideoTracks()[0] || null;
       const sender = pcRef.current?.getSenders().find((s) => s.track?.kind === "video" || s.track === null);
       if (sender) {
         sender.replaceTrack(videoTrack).catch(err => console.error("Error replacing track", err));
       }
-      if (localVideoRef.current) localVideoRef.current.srcObject = localStream;
+      if (localVideoRef.current) localVideoRef.current.srcObject = stream;
     }
     setIsScreenSharing(false);
   };
@@ -542,7 +719,7 @@ export default function VideoCall() {
   const toggleRecording = () => {
     if (!isRecording) {
       // Record remote stream if available, otherwise local stream
-      const streamToRecord = remoteStream || localStream;
+      const streamToRecord = remoteStream || localStreamRef.current;
       if (!streamToRecord) return;
 
       recordedChunksRef.current = [];
@@ -606,7 +783,7 @@ export default function VideoCall() {
               </div>
             )}
             
-            {/* Remote Video */}
+            {/* Remote Video — playsInline is critical for iOS */}
             <video
               ref={remoteVideoRef}
               autoPlay
@@ -627,7 +804,7 @@ export default function VideoCall() {
               </div>
             )}
             
-            {/* Local Video PiP */}
+            {/* Local Video PiP — playsInline + muted are critical for iOS autoplay */}
             <div className={`absolute bottom-4 right-4 z-50 bg-gray-900 rounded-lg overflow-hidden border-2 border-primary/50 shadow-lg ${isExpanded ? 'w-48 aspect-video' : 'w-24 aspect-video'}`}>
               
               {/* Local Video Overlay when Camera Off */}
@@ -646,7 +823,7 @@ export default function VideoCall() {
                 ref={localVideoRef}
                 autoPlay
                 playsInline
-                muted // Always mute local video
+                muted // Always mute local video — prevents echo feedback
                 className="w-full h-full object-cover"
                 style={{ transform: isScreenSharing ? 'none' : 'scaleX(-1)' }} // Mirror if camera
               />
@@ -681,18 +858,20 @@ export default function VideoCall() {
               {isVideoOn ? <Video className="w-4 h-4 sm:w-5 sm:h-5" /> : <VideoOff className="w-4 h-4 sm:w-5 sm:h-5" />}
             </Button>
 
-            {/* Screen share: hidden on mobile since getDisplayMedia is unsupported */}
-            {!isMobile && (
-              <Button
-                variant={isScreenSharing ? "default" : "outline"}
-                size="icon"
-                className={`rounded-full w-9 h-9 sm:w-10 sm:h-10 ${isScreenSharing ? "bg-blue-600 text-white hover:bg-blue-700" : ""}`}
-                onClick={toggleScreenShare}
-                title="Share Screen"
-              >
-                <MonitorUp className="w-4 h-4 sm:w-5 sm:h-5" />
-              </Button>
-            )}
+            {/* Screen share button: shown on all devices, styled as disabled with toast feedback on mobile */}
+            <Button
+              variant={isScreenSharing ? "default" : "outline"}
+              size="icon"
+              className={`rounded-full w-9 h-9 sm:w-10 sm:h-10 ${
+                isScreenSharing ? "bg-blue-600 text-white hover:bg-blue-700" : ""
+              } ${
+                !isScreenShareSupported() ? "opacity-40 cursor-not-allowed bg-muted text-muted-foreground" : ""
+              }`}
+              onClick={toggleScreenShare}
+              title={isScreenShareSupported() ? "Share Screen" : "Screen sharing is available on desktop browsers only"}
+            >
+              <MonitorUp className="w-4 h-4 sm:w-5 sm:h-5" />
+            </Button>
 
             <Button
               variant={isRecording ? "destructive" : "outline"}
