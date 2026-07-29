@@ -86,6 +86,7 @@ export const UserProvider = ({ children }) => {
 
   const verifyOtp = async (userId, otp) => {
     const res = await axiosInstance.post("/user/verify-otp", { userId, otp });
+    console.log(res.data.result);
     login(res.data.result, res.data.token);
     return res.data.result;
   };

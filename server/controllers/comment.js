@@ -1,12 +1,31 @@
 import comment from "../Modals/comment.js";
 import mongoose from "mongoose";
 
+// 🚫 Server-side special-character filter (mirrors client-side containsBadChars)
+const containsBadChars = (text) => {
+  const repeatedSymbolsRegex = /([@#$%^&<>{}|\[\]\-])\1{2,}/;
+  const clusterRegex = /[@#\$%\^&\[\]\{\}<>\|\-\+\=\\\/~\`]{4,}/;
+  const restrictedChars = text.match(/[@#\$%\^&\[\]\{\}<>\|\-\+\=\\\/~\`]/g);
+
+  if (repeatedSymbolsRegex.test(text) || clusterRegex.test(text)) {
+    return true;
+  }
+  if (restrictedChars && text.length > 0) {
+    if (restrictedChars.length / text.length > 0.5) return true;
+  }
+  return false;
+};
+
 // ✅ Create Comment
 export const postcomment = async (req, res) => {
   const { commentbody, userid, usercommented, videoid, city } = req.body;
 
   if (!commentbody || commentbody.trim() === "") {
     return res.status(400).json({ message: "Empty comment not allowed" });
+  }
+
+  if (containsBadChars(commentbody)) {
+    return res.status(400).json({ message: "Comments cannot contain excessive special characters" });
   }
 
   try {
@@ -72,6 +91,10 @@ export const editcomment = async (req, res) => {
 
   if (!commentbody || commentbody.trim() === "") {
     return res.status(400).json({ message: "Empty comment not allowed" });
+  }
+
+  if (containsBadChars(commentbody)) {
+    return res.status(400).json({ message: "Comments cannot contain excessive special characters" });
   }
 
   try {

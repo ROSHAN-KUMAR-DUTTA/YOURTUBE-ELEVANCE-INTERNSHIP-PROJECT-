@@ -31,6 +31,7 @@ const Comments = ({ videoId }: any) => {
   // Initialize city immediately from user.city so manual signup users see it on first render
   const [city, setCity] = useState<string>(() => (user?.city?.trim() ? user.city.trim() : ""));
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [cityAutoFilled, setCityAutoFilled] = useState(() => !!(user?.city?.trim()));
   const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
   const [editText, setEditText] = useState("");
   const [translated, setTranslated] = useState<{ [key: string]: string }>({});
@@ -50,6 +51,7 @@ const Comments = ({ videoId }: any) => {
     // Google users reach this on subsequent logins after city was saved.
     if (user.city && user.city.trim() !== "") {
       setCity(user.city);
+      setCityAutoFilled(true);
       return;
     }
 
@@ -80,6 +82,7 @@ const Comments = ({ videoId }: any) => {
 
           if (detectedCity) {
             setCity(detectedCity);
+            setCityAutoFilled(true);
             // Persist to DB — next login skips geolocation entirely
             try {
               const res = await axiosInstance.patch(`/user/update-city/${user._id}`, {
@@ -313,7 +316,8 @@ const Comments = ({ videoId }: any) => {
               placeholder="Enter your city"
               value={city}
               onChange={(e) => setCity(e.target.value)}
-              className="border p-1 text-sm"
+              disabled={cityAutoFilled}
+              className={`border p-1 text-sm ${cityAutoFilled ? 'opacity-60 cursor-not-allowed' : ''}`}
             />
 
             <div className="flex justify-end">

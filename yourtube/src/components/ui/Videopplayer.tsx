@@ -6,6 +6,7 @@ import { useRouter } from "next/router";
 import { Lock, Crown, Play, Pause, Volume2, VolumeX, Maximize, Minimize, FastForward, Rewind } from "lucide-react";
 import GestureOverlay from "./GestureOverlay";
 import { Button } from "./button";
+import { toast } from "sonner";
 
 
 interface VideoPlayerProps {
@@ -305,9 +306,13 @@ export default function VideoPlayer({
           }}
           onTripleTapRight={() => {
             window.close();
+            // Browsers block window.close() on tabs not opened via script.
+            // Check after 100ms if the tab is still open and fall back to navigation.
             setTimeout(() => {
-              if (onGoHome) onGoHome();
-            }, 300);
+              // If we're still here, close was blocked
+              toast.info("Can't close tab — redirecting home instead.");
+              router.push("/");
+            }, 100);
           }}
         />
       )}
