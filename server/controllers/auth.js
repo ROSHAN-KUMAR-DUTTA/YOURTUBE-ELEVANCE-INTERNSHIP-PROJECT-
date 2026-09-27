@@ -83,7 +83,7 @@ export const getUserById = async (req, res) => {
 };
 
 export const manualLogin = async (req, res) => {
-  const { email, password, mobile, state, name, simulatedState, city } = req.body;
+  const { email, password, mobile, state, name, city } = req.body;
 
   try {
     let user = await users.findOne({ email });
@@ -117,29 +117,13 @@ export const manualLogin = async (req, res) => {
       user.isVerified = false;
     }
 
-    // IP Geolocation Fallback
-    let currentState = simulatedState || user.state || state;
-    if (!simulatedState) {
-      try {
-        const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
-        const ipQuery = ip && ip !== '::1' && ip !== '127.0.0.1' ? `${ip}/` : '';
-        const response = await fetch(`https://ip-api.com/json/${ipQuery}`);
-        const data = await response.json();
-        if (data && data.status === "success" && data.regionName) {
-          currentState = data.regionName;
-          user.state = currentState;
-        } else {
-          throw new Error("Invalid geolocation data received");
-        }
-      } catch (error) {
-        console.error("[Location Fallback] IP Geolocation failed:", error.message);
-        if (!currentState) {
-          currentState = "Tamil Nadu"; // Predefined fallback
-          user.state = currentState;
-        }
-      }
-    } else {
-       user.state = currentState;
+    // Use user-provided state directly — no IP geolocation
+    const currentState = user.state || state;
+    if (!currentState) {
+      return res.status(400).json({ message: "State is required" });
+    }
+    if (!user.state) {
+      user.state = currentState;
     }
     
     await user.save();
